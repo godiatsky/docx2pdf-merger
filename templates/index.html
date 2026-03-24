@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>DOCX → PDF Merger</title>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #f5f6f8;
+    display: flex;
+    justify-content: center;
+    padding-top: 60px;
+}
+
+.container {
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+    width: 400px;
+}
+
+h1 {
+    text-align: center;
+}
+
+input {
+    margin: 10px 0;
+}
+
+button {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    background: #3b82f6;
+    color: white;
+    font-size: 16px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #2563eb;
+}
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>DOCX → PDF</h1>
+
+<form action="/merge" method="post" enctype="multipart/form-data">
+
+<label>Файл 1 (.docx)</label>
+<input type="file" name="file1" required>
+
+<label>Файл 2 (.docx)</label>
+<input type="file" name="file2" required>
+
+<button type="submit">
+Создать PDF
+</button>
+
+</form>
+
+</div>
+
+</body>
+</html>
