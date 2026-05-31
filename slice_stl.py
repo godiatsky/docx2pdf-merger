@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Slice an STL file into horizontal contour layers (topographic map / sculpture effect).
+Slice an STL file into contour layers (topographic map / sculpture effect).
 
 Usage:
     python slice_stl.py input.stl output.stl
     python slice_stl.py input.stl output.stl --slices 60 --gap 0.5
-    python slice_stl.py input.stl output.stl --axis Y --slices 80
+    python slice_stl.py input.stl output.stl --axis X --slices 80
 
 Options:
     --slices N      Number of slices (default: 80)
@@ -19,56 +19,50 @@ import numpy as np
 
 try:
     import trimesh
+    import trimesh.boolean
 except ImportError:
-    print("Error: trimesh not installed. Run: pip install trimesh numpy shapely")
+    print("Error: trimesh not installed. Run: pip install trimesh numpy scipy networkx shapely mapbox-earcut manifold3d")
     sys.exit(1)
 
 
 def slice_mesh(mesh, axis: str, num_slices: int, gap_ratio: float) -> list:
-    """Return a list of thin slab meshes along the given axis."""
+    """Return a list of slab meshes cut from the original along the given axis."""
     ax = {"X": 0, "Y": 1, "Z": 2}[axis.upper()]
-    normal = np.zeros(3)
-    normal[ax] = 1.0
 
     lo, hi = mesh.bounds[0][ax], mesh.bounds[1][ax]
     pitch = (hi - lo) / num_slices
     thickness = pitch * (1.0 - gap_ratio)
 
+    # Box that's huge in the two non-slice directions
+    big = float(max(mesh.extents) * 10)
+
     slabs = []
     for i in range(num_slices):
         center = lo + (i + 0.5) * pitch
-        origin = np.zeros(3)
-        origin[ax] = center
+
+        # Build a thin box at this slice position
+        extents = [big, big, big]
+        extents[ax] = thickness
+        t = np.eye(4)
+        t[ax, 3] = center
+        box = trimesh.creation.box(extents=extents, transform=t)
 
         try:
-            section = mesh.section(plane_origin=origin, plane_normal=normal)
-            if section is None:
-                continue
-
-            path2d, transform = section.to_2D()
-            if path2d is None or len(path2d.entities) == 0:
-                continue
-
-            slab = path2d.extrude(thickness)
-
-            # Center the slab around Z=0, then rotate back to world space
-            slab.apply_translation([0, 0, -thickness / 2])
-            slab.apply_transform(np.linalg.inv(transform))
-
-            slabs.append(slab)
-
-            if (i + 1) % 20 == 0 or i + 1 == num_slices:
-                print(f"  {i + 1}/{num_slices} slices done", flush=True)
-
+            slab = mesh.intersection(box, engine="manifold")
+            if slab is not None and len(slab.faces) > 0:
+                slabs.append(slab)
         except Exception:
             continue
+
+        if (i + 1) % 10 == 0 or i + 1 == num_slices:
+            print(f"  {i + 1}/{num_slices} slices done", flush=True)
 
     return slabs
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Slice STL into horizontal contour layers"
+        description="Slice STL into contour layers"
     )
     parser.add_argument("input", help="Input STL file")
     parser.add_argument("output", help="Output STL file")
