@@ -1,10 +1,10 @@
-import os, re, subprocess, tempfile
+import io, os, re, subprocess, tempfile
 from flask import Flask, request, send_file, jsonify
 from pypdf import PdfWriter, PdfReader
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
+app.config['MAX_CONTENT_LENGTH'] = 150 * 1024 * 1024  # 150MB
 
 def extract_num(fname):
     nums = re.findall(r'\d+', os.path.splitext(fname)[0])
@@ -64,6 +64,80 @@ def merge():
         return send_file(out, as_attachment=True,
                          download_name=out_name,
                          mimetype='application/pdf')
+
+@app.route('/slicer')
+def slicer_page():
+    return app.send_static_file('slicer.html')
+
+@app.route('/api/slice', methods=['POST'])
+def api_slice():
+    try:
+        import trimesh
+        import numpy as np
+    except ImportError:
+        return jsonify(error='trimesh не установлен на сервере'), 500
+
+    f = request.files.get('file')
+    if not f:
+        return jsonify(error='Файл не передан'), 400
+
+    try:
+        slices_n = max(5, min(200, int(request.form.get('slices', 30))))
+        gap      = max(0.05, min(0.90, float(request.form.get('gap', 0.45))))
+        axis     = request.form.get('axis', 'Y').upper()
+    except (ValueError, TypeError):
+        return jsonify(error='Неверные параметры'), 400
+
+    if axis not in ('X', 'Y', 'Z'):
+        return jsonify(error='Ось должна быть X, Y или Z'), 400
+
+    with tempfile.TemporaryDirectory() as tmp:
+        stl_in = os.path.join(tmp, 'in.stl')
+        f.save(stl_in)
+
+        mesh = trimesh.load(stl_in, force='mesh')
+        if isinstance(mesh, trimesh.Scene):
+            mesh = trimesh.util.concatenate(list(mesh.geometry.values()))
+        if not isinstance(mesh, trimesh.Trimesh) or len(mesh.faces) == 0:
+            return jsonify(error='Не удалось загрузить mesh'), 400
+
+        ax  = {'X': 0, 'Y': 1, 'Z': 2}[axis]
+        lo  = float(mesh.bounds[0][ax])
+        hi  = float(mesh.bounds[1][ax])
+        pitch     = (hi - lo) / slices_n
+        thickness = pitch * (1.0 - gap)
+        big       = float(max(mesh.extents) * 10)
+
+        slabs = []
+        for i in range(slices_n):
+            center  = lo + (i + 0.5) * pitch
+            extents = [big, big, big]
+            extents[ax] = thickness
+            t = np.eye(4)
+            t[ax, 3] = center
+            box = trimesh.creation.box(extents=extents, transform=t)
+            try:
+                slab = mesh.intersection(box, engine='manifold')
+                if slab is not None and len(slab.faces) > 0:
+                    slabs.append(slab)
+            except Exception:
+                continue
+
+        if not slabs:
+            return jsonify(error='Не удалось нарезать модель'), 500
+
+        combined  = trimesh.util.concatenate(slabs)
+        out_bytes = combined.export(file_type='stl')
+
+    stem  = os.path.splitext(secure_filename(f.filename or 'model'))[0]
+    dname = f'{stem}_sliced_{axis}{slices_n}.stl'
+    return send_file(
+        io.BytesIO(out_bytes),
+        as_attachment=True,
+        download_name=dname,
+        mimetype='application/octet-stream',
+    )
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

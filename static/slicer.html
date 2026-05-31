@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STL Slicer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#080808;
+  --s1:#111;
+  --s2:#171717;
+  --s3:#202020;
+  --border:#252525;
+  --border2:#303030;
+  --accent:#c8a45a;
+  --accent-glow:rgba(200,164,90,.12);
+  --accent-dim:rgba(200,164,90,.18);
+  --text:#ebebeb;
+  --text2:#7a7a7a;
+  --text3:#3d3d3d;
+  --ok:#4caf6a;
+  --ok-dim:rgba(76,175,106,.12);
+  --err:#e05252;
+  --sans:'DM Sans',sans-serif;
+  --mono:'DM Mono',monospace;
+  --r:10px;
+}
+
+html,body{height:100%;overflow:hidden}
+body{
+  font-family:var(--sans);
+  background:var(--bg);
+  color:var(--text);
+  display:flex;
+  font-size:14px;
+}
+
+/* ══════════════ SIDEBAR ══════════════ */
+#sidebar{
+  width:290px;
+  flex-shrink:0;
+  height:100vh;
+  background:var(--s1);
+  border-right:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  padding:22px 18px 18px;
+  gap:18px;
+  overflow-y:auto;
+  overflow-x:hidden;
+}
+
+/* Brand */
+.brand{display:flex;align-items:center;gap:11px;padding-bottom:2px}
+.brand-mark{
+  width:32px;height:32px;
+  border:1.5px solid var(--accent);
+  border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--accent);
+  flex-shrink:0;
+  font-size:14px;
+}
+.brand-name{font-size:15px;font-weight:600;letter-spacing:-.3px;line-height:1.1}
+.brand-tag{
+  font-size:9px;font-weight:400;
+  color:var(--text3);
+  letter-spacing:.12em;text-transform:uppercase;
+  margin-top:2px;
+}
+
+/* Divider */
+.hr{border:none;border-top:1px solid var(--border);margin:0 -2px}
+
+/* Drop zone */
+.dropzone{
+  border:1.5px dashed var(--border2);
+  border-radius:var(--r);
+  padding:18px 14px;
+  text-align:center;
+  cursor:pointer;
+  transition:border-color .2s,background .2s;
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  min-height:96px;
+  user-select:none;
+}
+.dropzone:hover,.dropzone.over{
+  border-color:var(--accent);
+  background:var(--accent-glow);
+}
+.dropzone.loaded{
+  border-style:solid;
+  border-color:var(--ok);
+  background:var(--ok-dim);
+  cursor:default;
+}
+.dropzone input{display:none}
+
+.dz-ico{
+  font-size:22px;
+  line-height:1;
+  color:var(--text3);
+  transition:color .2s;
+  margin-bottom:2px;
+}
+.dropzone:hover .dz-ico,.dropzone.over .dz-ico{color:var(--accent)}
+.dropzone.loaded .dz-ico{color:var(--ok);font-size:18px}
+
+.dz-name{
+  font-size:12px;font-weight:500;
+  color:var(--text);
+  word-break:break-all;
+  line-height:1.3;
+}
+.dz-sub{
+  font-size:11px;
+  color:var(--text3);
+}
+.dropzone.loaded .dz-sub{color:var(--ok)}
+
+.dz-x{
+  position:absolute;top:7px;right:9px;
+  background:none;border:none;
+  color:var(--text3);font-size:13px;
+  cursor:pointer;padding:2px 4px;
+  display:none;line-height:1;
+}
+.dz-x:hover{color:var(--err)}
+.dropzone.loaded .dz-x{display:block}
+
+/* Section label */
+.lbl{
+  font-size:9px;font-weight:600;
+  letter-spacing:.13em;text-transform:uppercase;
+  color:var(--text3);
+  margin-bottom:-10px;
+}
+
+/* Axis selector */
+.axis-sel{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:5px;
+}
+.axis-btn{
+  background:var(--s2);
+  border:1px solid var(--border);
+  border-radius:7px;
+  color:var(--text2);
+  font-family:var(--mono);
+  font-size:13px;
+  font-weight:500;
+  padding:9px 0;
+  cursor:pointer;
+  transition:all .15s;
+  letter-spacing:.04em;
+}
+.axis-btn:hover{border-color:var(--border2);color:var(--text)}
+.axis-btn.on{
+  background:var(--accent-dim);
+  border-color:var(--accent);
+  color:var(--accent);
+}
+
+/* Sliders */
+.sl-group{display:flex;flex-direction:column;gap:9px}
+.sl-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+.sl-key{font-size:12px;color:var(--text2)}
+.sl-val{
+  font-family:var(--mono);
+  font-size:13px;
+  color:var(--text);
+  min-width:36px;
+  text-align:right;
+}
+
+input[type=range]{
+  -webkit-appearance:none;
+  width:100%;height:3px;
+  background:var(--s3);
+  border-radius:2px;
+  outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  width:15px;height:15px;
+  border-radius:50%;
+  background:var(--accent);
+  cursor:grab;
+  box-shadow:0 0 0 3px var(--accent-glow);
+  transition:box-shadow .15s;
+}
+input[type=range]::-webkit-slider-thumb:hover{
+  box-shadow:0 0 0 6px var(--accent-dim);
+}
+input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
+
+/* Stats */
+.stats{
+  background:var(--s2);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  padding:14px 15px;
+  display:flex;
+  flex-direction:column;
+  gap:11px;
+}
+.st-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+.st-k{
+  font-size:11px;
+  color:var(--text2);
+  text-transform:uppercase;
+  letter-spacing:.07em;
+}
+.st-v{
+  font-family:var(--mono);
+  font-size:12px;
+  color:var(--text);
+}
+.st-v.accent{color:var(--accent)}
+.st-v.dim{color:var(--text3)}
+
+/* Progress bar */
+.prog-wrap{
+  height:3px;
+  background:var(--s3);
+  border-radius:2px;
+  overflow:hidden;
+}
+.prog-bar{
+  height:100%;
+  border-radius:2px;
+  background:var(--accent);
+  transition:width .1s;
+}
+
+/* Generate button */
+.gen-btn{
+  width:100%;padding:13px;
+  background:var(--accent);
+  color:#0a0a0a;
+  border:none;border-radius:var(--r);
+  font-family:var(--sans);font-size:13px;font-weight:600;
+  cursor:pointer;
+  transition:opacity .15s,transform .1s;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  flex-shrink:0;
+  margin-top:auto;
+  letter-spacing:.01em;
+}
+.gen-btn:hover:not(:disabled):not(.loading){opacity:.85}
+.gen-btn:active:not(:disabled):not(.loading){transform:scale(.98)}
+.gen-btn:disabled{background:var(--s3);color:var(--text3);cursor:not-allowed}
+.gen-btn.loading{pointer-events:none;opacity:.7}
+
+.spin{
+  width:13px;height:13px;
+  border:2px solid rgba(0,0,0,.25);
+  border-top-color:#0a0a0a;
+  border-radius:50%;
+  animation:spin .65s linear infinite;
+  display:none;
+  flex-shrink:0;
+}
+.gen-btn.loading .spin{display:block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Error toast */
+#toast{
+  position:fixed;
+  bottom:24px;left:50%;
+  transform:translateX(-50%) translateY(20px);
+  background:var(--err);
+  color:#fff;
+  font-size:12px;
+  padding:9px 16px;
+  border-radius:8px;
+  opacity:0;
+  transition:all .3s;
+  pointer-events:none;
+  white-space:nowrap;
+  z-index:999;
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ══════════════ VIEWPORT ══════════════ */
+#viewport{
+  flex:1;
+  position:relative;
+  overflow:hidden;
+  background:var(--bg);
+}
+#gl{width:100%;height:100%;display:block}
+
+.hint{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:14px;
+  pointer-events:none;
+  transition:opacity .4s;
+}
+.hint.off{opacity:0}
+.hint-ring{
+  width:64px;height:64px;
+  border:1.5px solid var(--border2);
+  border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--text3);font-size:24px;
+  animation:breathe 3s ease-in-out infinite;
+}
+@keyframes breathe{
+  0%,100%{border-color:var(--border);color:var(--text3)}
+  50%{border-color:var(--border2);color:var(--text2)}
+}
+.hint-text{font-size:13px;color:var(--text3)}
+.hint-sub{font-size:11px;color:var(--text3);opacity:.6}
+
+/* Viewport HUD */
+.hud{
+  position:absolute;
+  bottom:20px;left:0;right:0;
+  display:flex;justify-content:center;gap:8px;
+}
+.hud-pill{
+  background:rgba(17,17,17,.82);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  border:1px solid var(--border);
+  border-radius:100px;
+  padding:5px 13px;
+  font-size:11px;
+  color:var(--text2);
+  font-family:var(--mono);
+}
+.hud-pill button{
+  background:none;border:none;
+  color:var(--text2);
+  font-family:var(--mono);font-size:11px;
+  cursor:pointer;padding:0;
+}
+.hud-pill button:hover{color:var(--text)}
+
+.corner{
+  position:absolute;
+  top:16px;right:16px;
+  font-family:var(--mono);font-size:10px;
+  color:var(--text3);
+  line-height:1.8;
+  text-align:right;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════ SIDEBAR ═══════ -->
+<aside id="sidebar">
+
+  <div class="brand">
+    <div class="brand-mark">◈</div>
+    <div>
+      <div class="brand-name">STL Slicer</div>
+      <div class="brand-tag">Contour Tool</div>
+    </div>
+  </div>
+
+  <div class="hr"></div>
+
+  <!-- Upload -->
+  <div class="dropzone" id="dz"
+       onclick="dzClick()"
+       ondragover="dzOver(event)"
+       ondragleave="dzLeave()"
+       ondrop="dzDrop(event)">
+    <input type="file" id="fileInput" accept=".stl" onchange="onFile(this.files[0])">
+    <button class="dz-x" onclick="clearFile(event)">✕</button>
+    <div class="dz-ico" id="dzIco">◈</div>
+    <div class="dz-name" id="dzName">Drop STL file here</div>
+    <div class="dz-sub" id="dzSub">or click to browse</div>
+  </div>
+
+  <!-- Axis -->
+  <div class="lbl">Slice Axis</div>
+  <div class="axis-sel">
+    <button class="axis-btn" onclick="setAxis('X')">X</button>
+    <button class="axis-btn on" onclick="setAxis('Y')">Y</button>
+    <button class="axis-btn" onclick="setAxis('Z')">Z</button>
+  </div>
+
+  <!-- Slices -->
+  <div class="sl-group">
+    <div class="sl-head">
+      <span class="sl-key">Slices</span>
+      <span class="sl-val" id="slVal">30</span>
+    </div>
+    <input type="range" id="slInput" min="5" max="120" value="30" oninput="onParams()">
+  </div>
+
+  <!-- Gap -->
+  <div class="sl-group">
+    <div class="sl-head">
+      <span class="sl-key">Gap ratio</span>
+      <span class="sl-val" id="gapVal">0.45</span>
+    </div>
+    <input type="range" id="gapInput" min="10" max="85" value="45" oninput="onParams()">
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="st-row">
+      <span class="st-k">Pitch</span>
+      <span class="st-v" id="stPitch">—</span>
+    </div>
+    <div class="prog-wrap">
+      <div class="prog-bar" id="progBar" style="width:55%"></div>
+    </div>
+    <div class="st-row">
+      <span class="st-k">Slab</span>
+      <span class="st-v accent" id="stSlab">—</span>
+    </div>
+    <div class="st-row">
+      <span class="st-k">Gap</span>
+      <span class="st-v" id="stGap">—</span>
+    </div>
+    <div class="hr"></div>
+    <div class="st-row">
+      <span class="st-k">Model size</span>
+      <span class="st-v dim" id="stModel">load STL</span>
+    </div>
+    <div class="st-row">
+      <span class="st-k">Triangles</span>
+      <span class="st-v dim" id="stTris">—</span>
+    </div>
+  </div>
+
+  <!-- Generate -->
+  <button class="gen-btn" id="genBtn" disabled onclick="generate()">
+    <div class="spin" id="genSpin"></div>
+    <span id="genLabel">Generate STL</span>
+  </button>
+
+</aside>
+
+<!-- ═══════ VIEWPORT ═══════ -->
+<main id="viewport">
+  <canvas id="gl"></canvas>
+
+  <div class="hint" id="hint">
+    <div class="hint-ring">◈</div>
+    <div class="hint-text">Drop an STL file to begin</div>
+    <div class="hint-sub">Adjust slices and gap, then export</div>
+  </div>
+
+  <div class="hud">
+    <div class="hud-pill"><button onclick="resetCam()">Reset camera</button></div>
+    <div class="hud-pill" id="hudInfo" style="display:none"></div>
+  </div>
+
+  <div class="corner" id="corner"></div>
+</main>
+
+<div id="toast"></div>
+
+<!-- ═══════ THREE.JS ═══════ -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.162.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.162.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+
+/* ─── globals ──────────────────────────────── */
+let currentFile = null;
+let currentMesh = null;
+let mat = null;
+let modelLocalBounds = null; // THREE.Box3 in geometry local space (after center())
+let currentAxis = 'Y';
+
+/* ─── renderer ─────────────────────────────── */
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x080808);
+renderer.shadowMap.enabled = false;
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 50000);
+camera.position.set(0, -300, 200);
+camera.up.set(0, 0, 1);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.screenSpacePanning = false;
+
+function resize() {
+  const vp = document.getElementById('viewport');
+  const W = vp.clientWidth, H = vp.clientHeight;
+  renderer.setSize(W, H);
+  camera.aspect = W / H;
+  camera.updateProjectionMatrix();
+}
+resize();
+new ResizeObserver(resize).observe(document.getElementById('viewport'));
+
+/* ─── shader ───────────────────────────────── */
+const vert = `
+varying vec3 vPos;
+varying vec3 vWNorm;
+void main(){
+  vPos = position;
+  vWNorm = normalize(mat3(modelMatrix)*normal);
+  gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.);
+}`;
+
+const frag = `
+uniform float uSlices;
+uniform float uGap;
+uniform int   uAxis;
+uniform float uMin;
+uniform float uMax;
+varying vec3 vPos;
+varying vec3 vWNorm;
+
+void main(){
+  float p = (uAxis==0)?vPos.x:(uAxis==1)?vPos.y:vPos.z;
+  float t = clamp((p-uMin)/(uMax-uMin),0.,1.);
+  float pitch = 1./uSlices;
+  float within = mod(t,pitch)/pitch;
+  bool slab = within<(1.-uGap);
+
+  vec3 sun = normalize(vec3(.8,.4,1.8));
+  float rim = normalize(vec3(-.6,-.5,.3)).z;
+  float d = max(dot(vWNorm,sun),0.);
+  float r = pow(max(1.-dot(vWNorm,vec3(0.,0.,1.)),0.),3.)*.18;
+  float light = .28+.62*d+r;
+
+  vec3 col = slab
+    ? vec3(.88,.87,.85)*light
+    : vec3(.06,.06,.065);
+
+  gl_FragColor = vec4(col,1.);
+}`;
+
+function makeMat(bMin, bMax) {
+  return new THREE.ShaderMaterial({
+    vertexShader: vert,
+    fragmentShader: frag,
+    uniforms: {
+      uSlices: { value: 30.0 },
+      uGap:    { value: 0.45 },
+      uAxis:   { value: 1 },
+      uMin:    { value: bMin },
+      uMax:    { value: bMax },
+    },
+    side: THREE.DoubleSide,
+  });
+}
+
+/* ─── update shader uniforms ───────────────── */
+function syncUniforms() {
+  if (!mat || !modelLocalBounds) return;
+  const slices = +document.getElementById('slInput').value;
+  const gap    = +document.getElementById('gapInput').value / 100;
+  const axIdx  = {X:0,Y:1,Z:2}[currentAxis];
+  mat.uniforms.uSlices.value = slices;
+  mat.uniforms.uGap.value    = gap;
+  mat.uniforms.uAxis.value   = axIdx;
+  mat.uniforms.uMin.value    = modelLocalBounds.min.getComponent(axIdx);
+  mat.uniforms.uMax.value    = modelLocalBounds.max.getComponent(axIdx);
+}
+
+/* ─── stats panel ──────────────────────────── */
+function updateStats() {
+  const slices = +document.getElementById('slInput').value;
+  const gap    = +document.getElementById('gapInput').value / 100;
+
+  document.getElementById('slVal').textContent  = slices;
+  document.getElementById('gapVal').textContent = gap.toFixed(2);
+
+  const axIdx = {X:0,Y:1,Z:2}[currentAxis];
+  const corner = document.getElementById('corner');
+  corner.textContent = `axis: ${currentAxis}   slices: ${slices}   gap: ${gap.toFixed(2)}`;
+
+  if (!modelLocalBounds) {
+    ['stPitch','stSlab','stGap'].forEach(id=>document.getElementById(id).textContent='—');
+    document.getElementById('progBar').style.width = `${(1-gap)*100}%`;
+    return;
+  }
+
+  const span  = modelLocalBounds.max.getComponent(axIdx) - modelLocalBounds.min.getComponent(axIdx);
+  const pitch = span / slices;
+  const slab  = pitch * (1 - gap);
+  const gapMm = pitch * gap;
+
+  const fmt = v => v >= 1 ? v.toFixed(2)+' mm' : (v*1000).toFixed(1)+' µm';
+  document.getElementById('stPitch').textContent = fmt(pitch);
+  document.getElementById('stSlab').textContent  = fmt(slab);
+  document.getElementById('stGap').textContent   = fmt(gapMm);
+  document.getElementById('progBar').style.width = `${(1-gap)*100}%`;
+}
+
+/* ─── load STL ─────────────────────────────── */
+const loader = new STLLoader();
+
+function loadSTL(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    let geo;
+    try { geo = loader.parse(e.target.result); }
+    catch(_) { showToast('Не удалось прочитать STL файл'); return; }
+
+    if (currentMesh) { scene.remove(currentMesh); currentMesh.geometry.dispose(); }
+
+    geo.computeVertexNormals();
+    geo.center();
+    geo.computeBoundingBox();
+
+    modelLocalBounds = geo.boundingBox.clone();
+    const sz = modelLocalBounds.getSize(new THREE.Vector3());
+
+    const axIdx = {X:0,Y:1,Z:2}[currentAxis];
+    mat = makeMat(
+      modelLocalBounds.min.getComponent(axIdx),
+      modelLocalBounds.max.getComponent(axIdx)
+    );
+
+    currentMesh = new THREE.Mesh(geo, mat);
+    scene.add(currentMesh);
+
+    fitCamera(sz);
+    syncUniforms();
+    updateStats();
+
+    // UI
+    const tris = geo.index ? geo.index.count/3 : geo.attributes.position.count/3;
+    document.getElementById('stModel').textContent =
+      `${sz.x.toFixed(1)} × ${sz.y.toFixed(1)} × ${sz.z.toFixed(1)} mm`;
+    document.getElementById('stTris').textContent =
+      Math.round(tris).toLocaleString();
+    document.getElementById('hudInfo').style.display = '';
+    document.getElementById('hudInfo').textContent =
+      `${Math.round(tris).toLocaleString()} tris`;
+    document.getElementById('hint').classList.add('off');
+    document.getElementById('genBtn').disabled = false;
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function fitCamera(sz) {
+  const maxD = Math.max(sz.x, sz.y, sz.z);
+  const fovR = camera.fov * Math.PI / 180;
+  let dist = (maxD / 2) / Math.tan(fovR / 2) * 2.4;
+  controls.target.set(0, 0, 0);
+  camera.position.set(dist * .35, -dist * .85, dist * .6);
+  camera.near = dist * .001;
+  camera.far  = dist * 200;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+window.resetCam = function() {
+  if (!modelLocalBounds) return;
+  const sz = modelLocalBounds.getSize(new THREE.Vector3());
+  fitCamera(sz);
+};
+
+/* ─── animation loop ───────────────────────── */
+(function loop() {
+  requestAnimationFrame(loop);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+/* ─── expose to global scope ───────────────── */
+window._loadSTL = loadSTL;
+window._syncUniforms = syncUniforms;
+window._updateStats = updateStats;
+window._setAxisInternal = function(ax) {
+  currentAxis = ax;
+  if (mat && modelLocalBounds) {
+    const axIdx = {X:0,Y:1,Z:2}[ax];
+    mat.uniforms.uAxis.value = axIdx;
+    mat.uniforms.uMin.value  = modelLocalBounds.min.getComponent(axIdx);
+    mat.uniforms.uMax.value  = modelLocalBounds.max.getComponent(axIdx);
+  }
+};
+</script>
+
+<script>
+/* ─── non-module UI logic ──────────────────── */
+
+let currentAxis = 'Y';
+
+function dzClick() {
+  if (!document.getElementById('dz').classList.contains('loaded'))
+    document.getElementById('fileInput').click();
+}
+
+function dzOver(e) {
+  e.preventDefault();
+  document.getElementById('dz').classList.add('over');
+}
+function dzLeave() {
+  document.getElementById('dz').classList.remove('over');
+}
+function dzDrop(e) {
+  e.preventDefault();
+  dzLeave();
+  const f = e.dataTransfer.files[0];
+  if (f) onFile(f);
+}
+
+function onFile(f) {
+  if (!f || !f.name.toLowerCase().endsWith('.stl')) {
+    showToast('Нужен файл .stl');
+    return;
+  }
+  const dz = document.getElementById('dz');
+  dz.classList.remove('over');
+  dz.classList.add('loaded');
+  document.getElementById('dzIco').textContent = '✓';
+  document.getElementById('dzName').textContent = f.name;
+  document.getElementById('dzSub').textContent =
+    (f.size / 1048576).toFixed(1) + ' MB';
+  window._loadSTL(f);
+}
+
+function clearFile(e) {
+  e.stopPropagation();
+  const dz = document.getElementById('dz');
+  dz.classList.remove('loaded');
+  document.getElementById('dzIco').textContent = '◈';
+  document.getElementById('dzName').textContent = 'Drop STL file here';
+  document.getElementById('dzSub').textContent = 'or click to browse';
+  document.getElementById('fileInput').value = '';
+  document.getElementById('genBtn').disabled = true;
+  document.getElementById('hint').classList.remove('off');
+  document.getElementById('hudInfo').style.display = 'none';
+  document.getElementById('stModel').textContent = 'load STL';
+  document.getElementById('stTris').textContent = '—';
+  ['stPitch','stSlab','stGap'].forEach(id=>document.getElementById(id).textContent='—');
+}
+
+function setAxis(ax) {
+  currentAxis = ax;
+  document.querySelectorAll('.axis-btn').forEach(b => {
+    b.classList.toggle('on', b.textContent === ax);
+  });
+  if (window._setAxisInternal) window._setAxisInternal(ax);
+  if (window._updateStats) window._updateStats();
+}
+
+function onParams() {
+  if (window._syncUniforms) window._syncUniforms();
+  if (window._updateStats) window._updateStats();
+}
+
+async function generate() {
+  const f = document.getElementById('fileInput').files[0];
+  if (!f) return;
+
+  const btn   = document.getElementById('genBtn');
+  const spin  = document.getElementById('genSpin');
+  const label = document.getElementById('genLabel');
+
+  btn.classList.add('loading');
+  spin.style.display = 'block';
+  label.textContent = 'Processing';
+
+  const slices = document.getElementById('slInput').value;
+  const gap    = (document.getElementById('gapInput').value / 100).toFixed(2);
+
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('slices', slices);
+  fd.append('gap', gap);
+  fd.append('axis', currentAxis);
+
+  try {
+    const res = await fetch('/api/slice', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || res.statusText);
+    }
+    const blob = await res.blob();
+    const stem = f.name.replace(/\.stl$/i, '');
+    const name = `${stem}_sliced_${currentAxis}${slices}_g${gap.replace('.','')}.stl`;
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    showToast(err.message);
+  }
+
+  btn.classList.remove('loading');
+  spin.style.display = 'none';
+  label.textContent = 'Generate STL';
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// init stats display
+onParams();
+</script>
+</body>
+</html>
