@@ -49,7 +49,7 @@ body{
   display:flex;
   flex-direction:column;
   padding:22px 18px 18px;
-  gap:18px;
+  gap:14px;
   overflow-y:auto;
   overflow-x:hidden;
 }
@@ -142,7 +142,34 @@ body{
   font-size:9px;font-weight:600;
   letter-spacing:.13em;text-transform:uppercase;
   color:var(--text3);
-  margin-bottom:-10px;
+  margin-bottom:-6px;
+}
+
+/* Collapsible section */
+.section-toggle{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  cursor:pointer;
+  user-select:none;
+  padding:2px 0;
+}
+.section-toggle .lbl{margin-bottom:0}
+.section-toggle .toggle-arrow{
+  font-size:9px;
+  color:var(--text3);
+  transition:transform .2s;
+}
+.section-body{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  overflow:hidden;
+  max-height:0;
+  transition:max-height .25s ease;
+}
+.section-body.open{
+  max-height:600px;
 }
 
 /* Axis selector */
@@ -172,7 +199,7 @@ body{
 }
 
 /* Sliders */
-.sl-group{display:flex;flex-direction:column;gap:9px}
+.sl-group{display:flex;flex-direction:column;gap:7px}
 .sl-head{
   display:flex;
   justify-content:space-between;
@@ -207,6 +234,163 @@ input[type=range]::-webkit-slider-thumb:hover{
   box-shadow:0 0 0 6px var(--accent-dim);
 }
 input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
+
+/* Text input */
+.txt-input{
+  background:var(--s2);
+  border:1px solid var(--border);
+  border-radius:7px;
+  color:var(--text);
+  font-family:var(--mono);
+  font-size:12px;
+  padding:7px 10px;
+  width:100%;
+  outline:none;
+  transition:border-color .15s;
+}
+.txt-input:focus{border-color:var(--border2)}
+.txt-input::placeholder{color:var(--text3)}
+
+/* Number input small */
+.num-input{
+  background:var(--s2);
+  border:1px solid var(--border);
+  border-radius:5px;
+  color:var(--text);
+  font-family:var(--mono);
+  font-size:12px;
+  padding:4px 6px;
+  width:58px;
+  outline:none;
+  text-align:right;
+  transition:border-color .15s;
+}
+.num-input:focus{border-color:var(--border2)}
+
+/* Slider+number row */
+.sl-with-num{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.sl-with-num input[type=range]{flex:1}
+
+/* Segmented control */
+.seg-ctrl{
+  display:grid;
+  gap:4px;
+}
+.seg-ctrl.cols2{grid-template-columns:1fr 1fr}
+.seg-btn{
+  background:var(--s2);
+  border:1px solid var(--border);
+  border-radius:7px;
+  color:var(--text2);
+  font-size:12px;
+  font-family:var(--sans);
+  font-weight:500;
+  padding:8px 4px;
+  cursor:pointer;
+  transition:all .15s;
+  text-align:center;
+}
+.seg-btn:hover{border-color:var(--border2);color:var(--text)}
+.seg-btn.on{
+  background:var(--accent-dim);
+  border-color:var(--accent);
+  color:var(--accent);
+}
+
+/* Toggle checkbox row */
+.toggle-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.toggle-row label{font-size:12px;color:var(--text2);cursor:pointer;flex:1}
+
+/* Toggle switch */
+.toggle-sw{
+  position:relative;
+  width:34px;height:18px;
+  flex-shrink:0;
+  cursor:pointer;
+}
+.toggle-sw input{opacity:0;width:0;height:0;position:absolute}
+.toggle-sw .track{
+  position:absolute;inset:0;
+  background:var(--s3);
+  border-radius:18px;
+  border:1px solid var(--border2);
+  transition:background .15s,border-color .15s;
+}
+.toggle-sw input:checked ~ .track{
+  background:var(--accent-dim);
+  border-color:var(--accent);
+}
+.toggle-sw .thumb{
+  position:absolute;
+  top:3px;left:3px;
+  width:10px;height:10px;
+  border-radius:50%;
+  background:var(--text3);
+  transition:transform .15s,background .15s;
+}
+.toggle-sw input:checked ~ .thumb{
+  background:var(--accent);
+  transform:translateX(16px);
+}
+
+/* Select dropdown */
+.sel-input{
+  background:var(--s2);
+  border:1px solid var(--border);
+  border-radius:7px;
+  color:var(--text);
+  font-family:var(--sans);
+  font-size:12px;
+  padding:7px 10px;
+  width:100%;
+  outline:none;
+  cursor:pointer;
+  -webkit-appearance:none;
+  appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%237a7a7a'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 10px center;
+  padding-right:26px;
+}
+.sel-input:focus{border-color:var(--border2)}
+
+/* Printer dims row */
+.printer-dims{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:5px;
+}
+.printer-dim-cell{display:flex;flex-direction:column;gap:3px}
+.printer-dim-cell label{font-size:10px;color:var(--text3);text-align:center}
+.printer-dim-cell input{
+  background:var(--s2);
+  border:1px solid var(--border);
+  border-radius:5px;
+  color:var(--text);
+  font-family:var(--mono);
+  font-size:11px;
+  padding:5px 6px;
+  outline:none;
+  text-align:center;
+  width:100%;
+}
+.printer-dim-cell input:focus{border-color:var(--border2)}
+
+/* Lens SVG diagram */
+.lens-diagram{
+  display:flex;
+  justify-content:center;
+  margin:2px 0;
+}
 
 /* Stats */
 .stats{
@@ -262,7 +446,7 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
   transition:opacity .15s,transform .1s;
   display:flex;align-items:center;justify-content:center;gap:8px;
   flex-shrink:0;
-  margin-top:auto;
+  margin-top:4px;
   letter-spacing:.01em;
 }
 .gen-btn:hover:not(:disabled):not(.loading){opacity:.85}
@@ -366,6 +550,21 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
   line-height:1.8;
   text-align:right;
 }
+
+/* ViewHelper canvas overlay */
+#viewHelperCanvas{
+  position:absolute;
+  bottom:70px;
+  right:16px;
+  width:96px;
+  height:96px;
+  cursor:pointer;
+  pointer-events:auto;
+}
+
+/* Helper row */
+.row2{display:flex;gap:8px;align-items:center}
+.row2 label{font-size:11px;color:var(--text3);white-space:nowrap}
 </style>
 </head>
 <body>
@@ -396,12 +595,71 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
     <div class="dz-sub" id="dzSub">or click to browse</div>
   </div>
 
+  <!-- ─── PRINTER section (collapsible) ─── -->
+  <div>
+    <div class="section-toggle" onclick="toggleSection('printerBody', this)">
+      <span class="lbl">Printer</span>
+      <span class="toggle-arrow">▸</span>
+    </div>
+    <div class="section-body" id="printerBody">
+      <div style="height:6px"></div>
+      <select class="sel-input" id="printerPreset" onchange="onPrinterPreset()">
+        <option value="bambu_a1mini">Bambu A1 Mini (180×180×180)</option>
+        <option value="bambu_x1c">Bambu X1C (256×256×256)</option>
+        <option value="bambu_p1s">Bambu P1S (256×256×256)</option>
+        <option value="ender3">Creality Ender 3 (220×220×250)</option>
+        <option value="custom">Custom</option>
+      </select>
+      <div class="printer-dims" id="printerDimsRow" style="display:none">
+        <div class="printer-dim-cell">
+          <label>W mm</label>
+          <input type="number" id="printerW" value="200" min="10" max="1000" oninput="onPrinterCustom()">
+        </div>
+        <div class="printer-dim-cell">
+          <label>D mm</label>
+          <input type="number" id="printerD" value="200" min="10" max="1000" oninput="onPrinterCustom()">
+        </div>
+        <div class="printer-dim-cell">
+          <label>H mm</label>
+          <input type="number" id="printerH" value="200" min="10" max="1000" oninput="onPrinterCustom()">
+        </div>
+      </div>
+      <div class="toggle-row">
+        <label for="showBedToggle">Show bed</label>
+        <label class="toggle-sw">
+          <input type="checkbox" id="showBedToggle" onchange="onShowBed()">
+          <span class="track"></span><span class="thumb"></span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="hr"></div>
+
+  <!-- ─── MODEL section ─── -->
+  <div class="lbl">Model</div>
+
   <!-- Axis -->
-  <div class="lbl">Slice Axis</div>
-  <div class="axis-sel">
-    <button class="axis-btn" onclick="setAxis('X')">X</button>
-    <button class="axis-btn on" onclick="setAxis('Y')">Y</button>
-    <button class="axis-btn" onclick="setAxis('Z')">Z</button>
+  <div>
+    <div class="sl-head" style="margin-bottom:6px">
+      <span class="sl-key" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase">Slice Axis</span>
+    </div>
+    <div class="axis-sel">
+      <button class="axis-btn" onclick="setAxis('X')">X</button>
+      <button class="axis-btn on" onclick="setAxis('Y')">Y</button>
+      <button class="axis-btn" onclick="setAxis('Z')">Z</button>
+    </div>
+  </div>
+
+  <!-- Scale -->
+  <div class="sl-group">
+    <div class="sl-head">
+      <span class="sl-key">Scale</span>
+      <span class="st-v dim" id="stModelSize" style="font-size:11px">—</span>
+    </div>
+    <input type="text" class="txt-input" id="scaleInput"
+           placeholder="e.g. 150mm or 80%"
+           onblur="onScaleChange()" onkeydown="if(event.key==='Enter')onScaleChange()">
   </div>
 
   <!-- Slices -->
@@ -421,6 +679,98 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
     </div>
     <input type="range" id="gapInput" min="10" max="85" value="45" oninput="onParams()">
   </div>
+
+  <div class="hr"></div>
+
+  <!-- ─── PROFILE section ─── -->
+  <div class="lbl">Profile</div>
+
+  <div class="sl-group">
+    <div class="sl-head">
+      <span class="sl-key">Width center (W_wide)</span>
+      <span class="sl-val" id="wWideVal">0</span>
+    </div>
+    <div class="sl-with-num">
+      <input type="range" id="wWideSlider" min="0" max="200" value="0" oninput="onWWide(this.value)">
+      <input type="number" class="num-input" id="wWideNum" value="0" min="0" max="20" step="0.5" oninput="onWWideNum(this.value)">
+    </div>
+  </div>
+
+  <div class="sl-group">
+    <div class="sl-head">
+      <span class="sl-key">Width top/bot (W_narrow)</span>
+      <span class="sl-val" id="wNarrowVal">0</span>
+    </div>
+    <div class="sl-with-num">
+      <input type="range" id="wNarrowSlider" min="0" max="200" value="0" oninput="onWNarrow(this.value)">
+      <input type="number" class="num-input" id="wNarrowNum" value="0" min="0" max="20" step="0.5" oninput="onWNarrowNum(this.value)">
+    </div>
+  </div>
+
+  <!-- Lens diagram SVG -->
+  <div class="lens-diagram">
+    <svg id="lensDiagram" width="200" height="54" viewBox="0 0 200 54"
+         style="display:block;overflow:visible">
+      <line x1="100" y1="0" x2="100" y2="54" stroke="#252525" stroke-width="1"/>
+      <path id="lensPath" d="" fill="rgba(200,164,90,0.15)" stroke="#c8a45a" stroke-width="1.5"/>
+      <text x="100" y="50" text-anchor="middle" fill="#3d3d3d" font-size="9" font-family="DM Mono,monospace">lens profile</text>
+    </svg>
+  </div>
+
+  <div class="hr"></div>
+
+  <!-- ─── OUTPUT section ─── -->
+  <div class="lbl">Output</div>
+
+  <!-- Base mode -->
+  <div class="sl-group">
+    <span class="sl-key" style="font-size:11px">Base plate</span>
+    <div class="seg-ctrl cols2">
+      <button class="seg-btn on" id="baseNoneBtn" onclick="setBase('none')">No base</button>
+      <button class="seg-btn" id="baseWithBtn" onclick="setBase('with')">With base</button>
+    </div>
+  </div>
+
+  <div id="baseThickRow" style="display:none" class="sl-group">
+    <div class="sl-head">
+      <span class="sl-key">Base thickness</span>
+      <span class="sl-val" id="baseThickVal">3.0 mm</span>
+    </div>
+    <input type="range" id="baseThickSlider" min="1" max="10" step="0.5" value="3" oninput="onBaseThick(this.value)">
+  </div>
+
+  <!-- Facade -->
+  <div class="toggle-row">
+    <label for="facadeToggle">Facade only (cut depth)</label>
+    <label class="toggle-sw">
+      <input type="checkbox" id="facadeToggle" onchange="onFacadeToggle()">
+      <span class="track"></span><span class="thumb"></span>
+    </label>
+  </div>
+  <div id="facadeDepthRow" style="display:none" class="sl-group">
+    <div class="sl-head">
+      <span class="sl-key" id="facadeDepthLabel">Keep front 50%</span>
+    </div>
+    <input type="range" id="facadeDepthSlider" min="10" max="100" value="50" oninput="onFacadeDepth(this.value)">
+  </div>
+
+  <!-- Numbering -->
+  <div class="toggle-row">
+    <label for="numberingToggle">Number each slice</label>
+    <label class="toggle-sw">
+      <input type="checkbox" id="numberingToggle">
+      <span class="track"></span><span class="thumb"></span>
+    </label>
+  </div>
+  <div class="sl-group" id="numSizeRow" style="display:none">
+    <div class="sl-head">
+      <span class="sl-key">Number size</span>
+      <span class="sl-val" id="numSizeVal">5.0 mm</span>
+    </div>
+    <input type="range" id="numSizeSlider" min="2" max="15" step="0.5" value="5" oninput="onNumSize(this.value)">
+  </div>
+
+  <div class="hr"></div>
 
   <!-- Stats -->
   <div class="stats">
@@ -448,6 +798,10 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
       <span class="st-k">Triangles</span>
       <span class="st-v dim" id="stTris">—</span>
     </div>
+    <div class="st-row" id="stLensRow" style="display:none">
+      <span class="st-k">W wide / narrow</span>
+      <span class="st-v dim" id="stLens">—</span>
+    </div>
   </div>
 
   <!-- Generate -->
@@ -461,6 +815,7 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
 <!-- ═══════ VIEWPORT ═══════ -->
 <main id="viewport">
   <canvas id="gl"></canvas>
+  <canvas id="viewHelperCanvas"></canvas>
 
   <div class="hint" id="hint">
     <div class="hint-ring">◈</div>
@@ -492,13 +847,18 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
 
 /* ─── globals ──────────────────────────────── */
 let currentFile = null;
 let currentMesh = null;
 let mat = null;
-let modelLocalBounds = null; // THREE.Box3 in geometry local space (after center())
+let modelLocalBounds = null;
 let currentAxis = 'Y';
+let bedMesh = null;
+let viewHelper = null;
+let printerBed = { w: 180, d: 180, h: 180 };
+let showBed = false;
 
 /* ─── renderer ─────────────────────────────── */
 const canvas = document.getElementById('gl');
@@ -506,6 +866,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setClearColor(0x080808);
 renderer.shadowMap.enabled = false;
+renderer.autoClear = false;
 
 const scene = new THREE.Scene();
 
@@ -517,6 +878,21 @@ const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.07;
 controls.screenSpacePanning = false;
+
+/* ─── ViewHelper ───────────────────────────── */
+const vhCanvas = document.getElementById('viewHelperCanvas');
+const vhRenderer = new THREE.WebGLRenderer({ canvas: vhCanvas, antialias: true, alpha: true });
+vhRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+vhRenderer.setSize(96, 96);
+vhRenderer.setClearColor(0x000000, 0);
+
+viewHelper = new ViewHelper(camera, vhRenderer.domElement);
+viewHelper.controls = controls;
+viewHelper.controls.center = controls.target;
+
+vhCanvas.addEventListener('pointerup', e => {
+  viewHelper.handleClick(e);
+});
 
 function resize() {
   const vp = document.getElementById('viewport');
@@ -544,6 +920,8 @@ uniform float uGap;
 uniform int   uAxis;
 uniform float uMin;
 uniform float uMax;
+uniform float uWWide;
+uniform float uWNarrow;
 varying vec3 vPos;
 varying vec3 vWNorm;
 
@@ -552,10 +930,35 @@ void main(){
   float t = clamp((p-uMin)/(uMax-uMin),0.,1.);
   float pitch = 1./uSlices;
   float within = mod(t,pitch)/pitch;
-  bool slab = within<(1.-uGap);
+  float slabFrac = 1.-uGap;
+  bool inSlab = within < slabFrac;
+
+  // lens check: if w_wide > 0, narrow at top/bottom of each slab
+  bool isInsideLens = true;
+  if(inSlab && uWWide > 0.001){
+    // position within slab: 0=bottom edge, 1=top edge, 0.5=center
+    float slabPos = within / slabFrac; // 0..1
+    float slabCenter = 0.5;
+    float distFromCenter = abs(slabPos - slabCenter) * 2.0; // 0=center,1=edge
+    // cos^2 profile: w(t) = wNarrow + (wWide-wNarrow)*cos^2(t*PI/2)
+    float cosVal = cos(distFromCenter * 3.14159 / 2.0);
+    float wFrac = uWNarrow + (uWWide - uWNarrow) * cosVal * cosVal;
+
+    // get perpendicular position
+    float q;
+    if(uAxis==0) q = vPos.y;
+    else if(uAxis==1) q = vPos.x;
+    else q = vPos.x;
+    float halfSpan = (uMax - uMin) / (2.0 * uSlices);
+    float halfW = wFrac * halfSpan;
+    float slabCenter3d = uMin + (floor(t / pitch) + 0.5) * (uMax-uMin) / uSlices;
+    float qDist = abs(q);
+    isInsideLens = qDist <= halfW;
+  }
+
+  bool slab = inSlab && isInsideLens;
 
   vec3 sun = normalize(vec3(.8,.4,1.8));
-  float rim = normalize(vec3(-.6,-.5,.3)).z;
   float d = max(dot(vWNorm,sun),0.);
   float r = pow(max(1.-dot(vWNorm,vec3(0.,0.,1.)),0.),3.)*.18;
   float light = .28+.62*d+r;
@@ -572,27 +975,57 @@ function makeMat(bMin, bMax) {
     vertexShader: vert,
     fragmentShader: frag,
     uniforms: {
-      uSlices: { value: 30.0 },
-      uGap:    { value: 0.45 },
-      uAxis:   { value: 1 },
-      uMin:    { value: bMin },
-      uMax:    { value: bMax },
+      uSlices:  { value: 30.0 },
+      uGap:     { value: 0.45 },
+      uAxis:    { value: 1 },
+      uMin:     { value: bMin },
+      uMax:     { value: bMax },
+      uWWide:   { value: 0.0 },
+      uWNarrow: { value: 0.0 },
     },
     side: THREE.DoubleSide,
   });
 }
 
+/* ─── bed helper ───────────────────────────── */
+function updateBed() {
+  if (bedMesh) { scene.remove(bedMesh); bedMesh.geometry.dispose(); bedMesh = null; }
+  if (!showBed) return;
+
+  const { w, d, h } = printerBed;
+  const geo = new THREE.BoxGeometry(w, d, h);
+  const edges = new THREE.EdgesGeometry(geo);
+  geo.dispose();
+  const mat2 = new THREE.LineBasicMaterial({ color: 0x445566, opacity: 0.55, transparent: true });
+  bedMesh = new THREE.LineSegments(edges, mat2);
+  bedMesh.position.set(0, 0, h / 2);
+  scene.add(bedMesh);
+}
+
 /* ─── update shader uniforms ───────────────── */
 function syncUniforms() {
   if (!mat || !modelLocalBounds) return;
-  const slices = +document.getElementById('slInput').value;
-  const gap    = +document.getElementById('gapInput').value / 100;
-  const axIdx  = {X:0,Y:1,Z:2}[currentAxis];
-  mat.uniforms.uSlices.value = slices;
-  mat.uniforms.uGap.value    = gap;
-  mat.uniforms.uAxis.value   = axIdx;
-  mat.uniforms.uMin.value    = modelLocalBounds.min.getComponent(axIdx);
-  mat.uniforms.uMax.value    = modelLocalBounds.max.getComponent(axIdx);
+  const slices  = +document.getElementById('slInput').value;
+  const gap     = +document.getElementById('gapInput').value / 100;
+  const axIdx   = {X:0,Y:1,Z:2}[currentAxis];
+  const wWide   = parseFloat(document.getElementById('wWideNum').value) || 0;
+  const wNarrow = parseFloat(document.getElementById('wNarrowNum').value) || 0;
+
+  const span = modelLocalBounds.max.getComponent(axIdx) - modelLocalBounds.min.getComponent(axIdx);
+  const pitch = span / slices;
+  const slabThick = pitch * (1 - gap);
+
+  // Convert mm to fraction of half-slab for shader
+  const wWideFrac   = wWide   > 0 ? (wWide   / slabThick) : 0;
+  const wNarrowFrac = wNarrow > 0 ? (wNarrow / slabThick) : wWideFrac;
+
+  mat.uniforms.uSlices.value  = slices;
+  mat.uniforms.uGap.value     = gap;
+  mat.uniforms.uAxis.value    = axIdx;
+  mat.uniforms.uMin.value     = modelLocalBounds.min.getComponent(axIdx);
+  mat.uniforms.uMax.value     = modelLocalBounds.max.getComponent(axIdx);
+  mat.uniforms.uWWide.value   = wWideFrac;
+  mat.uniforms.uWNarrow.value = wNarrowFrac;
 }
 
 /* ─── stats panel ──────────────────────────── */
@@ -623,6 +1056,16 @@ function updateStats() {
   document.getElementById('stSlab').textContent  = fmt(slab);
   document.getElementById('stGap').textContent   = fmt(gapMm);
   document.getElementById('progBar').style.width = `${(1-gap)*100}%`;
+
+  // Lens stats
+  const wWide   = parseFloat(document.getElementById('wWideNum').value) || 0;
+  const wNarrow = parseFloat(document.getElementById('wNarrowNum').value) || 0;
+  if (wWide > 0) {
+    document.getElementById('stLensRow').style.display = '';
+    document.getElementById('stLens').textContent = `${wWide.toFixed(1)} / ${wNarrow.toFixed(1)} mm`;
+  } else {
+    document.getElementById('stLensRow').style.display = 'none';
+  }
 }
 
 /* ─── load STL ─────────────────────────────── */
@@ -633,7 +1076,7 @@ function loadSTL(file) {
   reader.onload = e => {
     let geo;
     try { geo = loader.parse(e.target.result); }
-    catch(_) { showToast('Не удалось прочитать STL файл'); return; }
+    catch(_) { showToast('Could not read STL file'); return; }
 
     if (currentMesh) { scene.remove(currentMesh); currentMesh.geometry.dispose(); }
 
@@ -657,19 +1100,46 @@ function loadSTL(file) {
     syncUniforms();
     updateStats();
 
-    // UI
+    // Apply visual scale if set
+    const scaleStr = document.getElementById('scaleInput').value.trim();
+    if (scaleStr) applyVisualScale(scaleStr, sz);
+
+    const sizeStr = `${sz.x.toFixed(1)} × ${sz.y.toFixed(1)} × ${sz.z.toFixed(1)} mm`;
     const tris = geo.index ? geo.index.count/3 : geo.attributes.position.count/3;
-    document.getElementById('stModel').textContent =
-      `${sz.x.toFixed(1)} × ${sz.y.toFixed(1)} × ${sz.z.toFixed(1)} mm`;
-    document.getElementById('stTris').textContent =
-      Math.round(tris).toLocaleString();
+    document.getElementById('stModel').textContent = sizeStr;
+    document.getElementById('stModelSize').textContent = sizeStr;
+    document.getElementById('stTris').textContent = Math.round(tris).toLocaleString();
     document.getElementById('hudInfo').style.display = '';
-    document.getElementById('hudInfo').textContent =
-      `${Math.round(tris).toLocaleString()} tris`;
+    document.getElementById('hudInfo').textContent = `${Math.round(tris).toLocaleString()} tris`;
     document.getElementById('hint').classList.add('off');
     document.getElementById('genBtn').disabled = false;
   };
   reader.readAsArrayBuffer(file);
+}
+
+function applyVisualScale(scaleStr, origSz) {
+  if (!currentMesh) return;
+  scaleStr = scaleStr.trim();
+  let factor = 1.0;
+  try {
+    if (scaleStr.endsWith('%')) {
+      factor = parseFloat(scaleStr) / 100.0;
+    } else {
+      const mm = parseFloat(scaleStr.replace('mm',''));
+      const longest = Math.max(origSz.x, origSz.y, origSz.z);
+      if (longest > 0) factor = mm / longest;
+    }
+    if (factor > 0) {
+      currentMesh.scale.setScalar(factor);
+      // Update modelLocalBounds to reflect new scale
+      if (modelLocalBounds) {
+        modelLocalBounds.min.multiplyScalar(factor);
+        modelLocalBounds.max.multiplyScalar(factor);
+      }
+      syncUniforms();
+      updateStats();
+    }
+  } catch(_) {}
 }
 
 function fitCamera(sz) {
@@ -691,10 +1161,20 @@ window.resetCam = function() {
 };
 
 /* ─── animation loop ───────────────────────── */
+const clock = new THREE.Clock();
 (function loop() {
   requestAnimationFrame(loop);
+  const delta = clock.getDelta();
   controls.update();
+  renderer.clear();
   renderer.render(scene, camera);
+
+  // ViewHelper
+  if (viewHelper) {
+    viewHelper.update(delta);
+    vhRenderer.clear();
+    viewHelper.render(vhRenderer);
+  }
 })();
 
 /* ─── expose to global scope ───────────────── */
@@ -710,14 +1190,73 @@ window._setAxisInternal = function(ax) {
     mat.uniforms.uMax.value  = modelLocalBounds.max.getComponent(axIdx);
   }
 };
+window._setPrinterBed = function(w, d, h) {
+  printerBed = { w, d, h };
+  updateBed();
+};
+window._setShowBed = function(val) {
+  showBed = val;
+  updateBed();
+};
+window._applyVisualScale = function(scaleStr) {
+  if (!currentMesh || !modelLocalBounds) return;
+  // Reset scale first
+  currentMesh.scale.setScalar(1);
+  const sz = modelLocalBounds.getSize(new THREE.Vector3());
+  applyVisualScale(scaleStr, sz);
+};
 </script>
 
 <script>
 /* ─── non-module UI logic ──────────────────── */
 
 let currentAxis = 'Y';
-let storedFile = null; // always holds the current file regardless of how it was loaded
+let storedFile = null;
+let baseMode = 'none';
 
+const PRINTER_PRESETS = {
+  bambu_a1mini: { w: 180, d: 180, h: 180 },
+  bambu_x1c:   { w: 256, d: 256, h: 256 },
+  bambu_p1s:   { w: 256, d: 256, h: 256 },
+  ender3:      { w: 220, d: 220, h: 250 },
+  custom:      null,
+};
+
+/* ─── section collapse ─────────────────────── */
+function toggleSection(bodyId, header) {
+  const body = document.getElementById(bodyId);
+  const arrow = header.querySelector('.toggle-arrow');
+  const isOpen = body.classList.toggle('open');
+  if (arrow) arrow.textContent = isOpen ? '▾' : '▸';
+}
+
+/* ─── printer ──────────────────────────────── */
+function onPrinterPreset() {
+  const val = document.getElementById('printerPreset').value;
+  const dimsRow = document.getElementById('printerDimsRow');
+  if (val === 'custom') {
+    dimsRow.style.display = '';
+    onPrinterCustom();
+  } else {
+    dimsRow.style.display = 'none';
+    const p = PRINTER_PRESETS[val];
+    if (p && window._setPrinterBed) window._setPrinterBed(p.w, p.d, p.h);
+  }
+}
+
+function onPrinterCustom() {
+  const w = parseFloat(document.getElementById('printerW').value) || 200;
+  const d = parseFloat(document.getElementById('printerD').value) || 200;
+  const h = parseFloat(document.getElementById('printerH').value) || 200;
+  if (window._setPrinterBed) window._setPrinterBed(w, d, h);
+}
+
+function onShowBed() {
+  const val = document.getElementById('showBedToggle').checked;
+  if (window._setShowBed) window._setShowBed(val);
+}
+
+/* ─── drop zone ────────────────────────────── */
 function dzClick() {
   if (!document.getElementById('dz').classList.contains('loaded'))
     document.getElementById('fileInput').click();
@@ -739,7 +1278,7 @@ function dzDrop(e) {
 
 function onFile(f) {
   if (!f || !f.name.toLowerCase().endsWith('.stl')) {
-    showToast('Нужен файл .stl');
+    showToast('Need an .stl file');
     return;
   }
   const dz = document.getElementById('dz');
@@ -766,10 +1305,12 @@ function clearFile(e) {
   document.getElementById('hint').classList.remove('off');
   document.getElementById('hudInfo').style.display = 'none';
   document.getElementById('stModel').textContent = 'load STL';
+  document.getElementById('stModelSize').textContent = '—';
   document.getElementById('stTris').textContent = '—';
   ['stPitch','stSlab','stGap'].forEach(id=>document.getElementById(id).textContent='—');
 }
 
+/* ─── axis ─────────────────────────────────── */
 function setAxis(ax) {
   currentAxis = ax;
   document.querySelectorAll('.axis-btn').forEach(b => {
@@ -779,14 +1320,158 @@ function setAxis(ax) {
   if (window._updateStats) window._updateStats();
 }
 
+/* ─── scale ────────────────────────────────── */
+function onScaleChange() {
+  const val = document.getElementById('scaleInput').value.trim();
+  if (val && window._applyVisualScale) window._applyVisualScale(val);
+}
+
+/* ─── sliders ──────────────────────────────── */
 function onParams() {
   if (window._syncUniforms) window._syncUniforms();
   if (window._updateStats) window._updateStats();
 }
 
+/* ─── lens sliders ─────────────────────────── */
+function onWWide(rawVal) {
+  const mm = rawVal / 10;  // slider 0..200 → 0..20mm
+  document.getElementById('wWideVal').textContent = mm.toFixed(1);
+  document.getElementById('wWideNum').value = mm.toFixed(1);
+  // Clamp wNarrow
+  const wn = parseFloat(document.getElementById('wNarrowNum').value) || 0;
+  if (wn > mm) {
+    document.getElementById('wNarrowNum').value = mm.toFixed(1);
+    document.getElementById('wNarrowSlider').value = rawVal;
+    document.getElementById('wNarrowVal').textContent = mm.toFixed(1);
+  }
+  updateLensDiagram();
+  if (window._syncUniforms) window._syncUniforms();
+  if (window._updateStats) window._updateStats();
+}
+
+function onWWideNum(val) {
+  const mm = Math.max(0, Math.min(20, parseFloat(val) || 0));
+  document.getElementById('wWideSlider').value = Math.round(mm * 10);
+  document.getElementById('wWideVal').textContent = mm.toFixed(1);
+  const wn = parseFloat(document.getElementById('wNarrowNum').value) || 0;
+  if (wn > mm) {
+    document.getElementById('wNarrowNum').value = mm.toFixed(1);
+    document.getElementById('wNarrowSlider').value = Math.round(mm * 10);
+    document.getElementById('wNarrowVal').textContent = mm.toFixed(1);
+  }
+  updateLensDiagram();
+  if (window._syncUniforms) window._syncUniforms();
+  if (window._updateStats) window._updateStats();
+}
+
+function onWNarrow(rawVal) {
+  const mm = rawVal / 10;
+  const ww = parseFloat(document.getElementById('wWideNum').value) || 0;
+  const clampedMm = Math.min(mm, ww);
+  const clampedRaw = Math.round(clampedMm * 10);
+  document.getElementById('wNarrowSlider').value = clampedRaw;
+  document.getElementById('wNarrowVal').textContent = clampedMm.toFixed(1);
+  document.getElementById('wNarrowNum').value = clampedMm.toFixed(1);
+  updateLensDiagram();
+  if (window._syncUniforms) window._syncUniforms();
+  if (window._updateStats) window._updateStats();
+}
+
+function onWNarrowNum(val) {
+  const ww = parseFloat(document.getElementById('wWideNum').value) || 0;
+  const mm = Math.max(0, Math.min(ww, parseFloat(val) || 0));
+  document.getElementById('wNarrowSlider').value = Math.round(mm * 10);
+  document.getElementById('wNarrowVal').textContent = mm.toFixed(1);
+  updateLensDiagram();
+  if (window._syncUniforms) window._syncUniforms();
+  if (window._updateStats) window._updateStats();
+}
+
+/* ─── lens diagram ─────────────────────────── */
+function updateLensDiagram() {
+  const wWide   = parseFloat(document.getElementById('wWideNum').value) || 0;
+  const wNarrow = parseFloat(document.getElementById('wNarrowNum').value) || 0;
+
+  const path = document.getElementById('lensPath');
+  if (wWide <= 0) {
+    path.setAttribute('d', '');
+    return;
+  }
+
+  const svgW = 200, svgH = 54;
+  const cx = svgW / 2;
+  const maxHalfW = 60;  // max pixels for wWide
+  const yPad = 8;
+  const nPts = 24;
+
+  // Normalize: wNarrow might be 0 even if wWide > 0
+  const wN = Math.max(0, Math.min(wNarrow, wWide));
+  const wW = wWide;
+
+  const halfWPx = maxHalfW * (wW / 20.0);
+  const halfNPx = maxHalfW * (wN / 20.0);
+
+  // Build right side (bottom to top)
+  const pts = [];
+  for (let i = 0; i <= nPts; i++) {
+    const frac = i / nPts;
+    const y = yPad + frac * (svgH - 2 * yPad);
+    const t = (frac - 0.5) * 2;  // -1..1, 0 at center
+    const cosV = Math.cos(t * Math.PI / 2);
+    const hW = halfNPx + (halfWPx - halfNPx) * cosV * cosV;
+    pts.push([cx + hW, y]);
+  }
+  // Left side (top to bottom)
+  const ptsL = [];
+  for (let i = nPts; i >= 0; i--) {
+    const frac = i / nPts;
+    const y = yPad + frac * (svgH - 2 * yPad);
+    const t = (frac - 0.5) * 2;
+    const cosV = Math.cos(t * Math.PI / 2);
+    const hW = halfNPx + (halfWPx - halfNPx) * cosV * cosV;
+    ptsL.push([cx - hW, y]);
+  }
+
+  const all = pts.concat(ptsL);
+  const d = all.map((p, i) => `${i===0?'M':'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ') + ' Z';
+  path.setAttribute('d', d);
+}
+
+/* ─── base ─────────────────────────────────── */
+function setBase(mode) {
+  baseMode = mode;
+  document.getElementById('baseNoneBtn').classList.toggle('on', mode === 'none');
+  document.getElementById('baseWithBtn').classList.toggle('on', mode === 'with');
+  document.getElementById('baseThickRow').style.display = mode === 'with' ? '' : 'none';
+}
+
+function onBaseThick(val) {
+  document.getElementById('baseThickVal').textContent = parseFloat(val).toFixed(1) + ' mm';
+}
+
+/* ─── facade ───────────────────────────────── */
+function onFacadeToggle() {
+  const on = document.getElementById('facadeToggle').checked;
+  document.getElementById('facadeDepthRow').style.display = on ? '' : 'none';
+}
+
+function onFacadeDepth(val) {
+  document.getElementById('facadeDepthLabel').textContent = `Keep front ${val}%`;
+}
+
+/* ─── numbering ────────────────────────────── */
+document.getElementById('numberingToggle').addEventListener('change', function() {
+  document.getElementById('numSizeRow').style.display = this.checked ? '' : 'none';
+});
+
+function onNumSize(val) {
+  document.getElementById('numSizeVal').textContent = parseFloat(val).toFixed(1) + ' mm';
+}
+
+/* ─── generate ─────────────────────────────── */
 async function generate() {
   const f = storedFile;
-  if (!f) { showToast('Сначала загрузи STL файл'); return; }
+  if (!f) { showToast('Load an STL file first'); return; }
 
   const btn   = document.getElementById('genBtn');
   const spin  = document.getElementById('genSpin');
@@ -798,12 +1483,29 @@ async function generate() {
 
   const slices = document.getElementById('slInput').value;
   const gap    = (document.getElementById('gapInput').value / 100).toFixed(2);
+  const scale  = document.getElementById('scaleInput').value.trim();
+  const facadeOn = document.getElementById('facadeToggle').checked;
+  const facadeDepth = (document.getElementById('facadeDepthSlider').value / 100).toFixed(2);
+  const wWide   = parseFloat(document.getElementById('wWideNum').value) || 0;
+  const wNarrow = parseFloat(document.getElementById('wNarrowNum').value) || 0;
+  const numbering = document.getElementById('numberingToggle').checked;
+  const numSize = parseFloat(document.getElementById('numSizeSlider').value) || 5;
+  const baseThick = parseFloat(document.getElementById('baseThickSlider').value) || 3;
 
   const fd = new FormData();
-  fd.append('file', f);
-  fd.append('slices', slices);
-  fd.append('gap', gap);
-  fd.append('axis', currentAxis);
+  fd.append('file',            f);
+  fd.append('slices',          slices);
+  fd.append('gap',             gap);
+  fd.append('axis',            currentAxis);
+  fd.append('scale',           scale);
+  fd.append('base',            baseMode);
+  fd.append('base_thickness',  baseThick);
+  fd.append('facade',          facadeOn ? 'true' : 'false');
+  fd.append('facade_depth',    facadeDepth);
+  fd.append('w_wide',          wWide);
+  fd.append('w_narrow',        wNarrow);
+  fd.append('numbering',       numbering ? 'true' : 'false');
+  fd.append('num_size',        numSize);
 
   try {
     const res = await fetch('/api/slice', { method: 'POST', body: fd });
@@ -834,8 +1536,9 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 3500);
 }
 
-// init stats display
+// init
 onParams();
+updateLensDiagram();
 </script>
 </body>
 </html>
