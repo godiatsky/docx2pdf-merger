@@ -815,7 +815,6 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
 <!-- ═══════ VIEWPORT ═══════ -->
 <main id="viewport">
   <canvas id="gl"></canvas>
-  <canvas id="viewHelperCanvas"></canvas>
 
   <div class="hint" id="hint">
     <div class="hint-ring">◈</div>
@@ -880,18 +879,32 @@ controls.dampingFactor = 0.07;
 controls.screenSpacePanning = false;
 
 /* ─── ViewHelper ───────────────────────────── */
-const vhCanvas = document.getElementById('viewHelperCanvas');
-const vhRenderer = new THREE.WebGLRenderer({ canvas: vhCanvas, antialias: true, alpha: true });
-vhRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-vhRenderer.setSize(96, 96);
-vhRenderer.setClearColor(0x000000, 0);
-
-viewHelper = new ViewHelper(camera, vhRenderer.domElement);
+viewHelper = new ViewHelper(camera, renderer.domElement);
+// OrbitControls uses .target; ViewHelper needs .center
+Object.defineProperty(controls, 'center', {
+  get() { return this.target; },
+  set(v) { this.target.copy(v); },
+  configurable: true,
+});
 viewHelper.controls = controls;
-viewHelper.controls.center = controls.target;
 
-vhCanvas.addEventListener('pointerup', e => {
-  viewHelper.handleClick(e);
+// Handle clicks on the main canvas for the viewHelper corner area
+canvas.addEventListener('pointerup', e => {
+  const vp = document.getElementById('viewport');
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const W = vp.clientWidth, H = vp.clientHeight;
+  const SZ = 96;
+  if (x > W - SZ && y > H - SZ) {
+    // Remap click coordinates into the viewHelper's 96x96 square
+    const fake = new PointerEvent('pointerup', {
+      clientX: e.clientX - (rect.left + W - SZ),
+      clientY: e.clientY - (rect.top  + H - SZ),
+      bubbles: false,
+    });
+    viewHelper.handleClick(fake);
+  }
 });
 
 function resize() {
@@ -1145,9 +1158,16 @@ function applyVisualScale(scaleStr, origSz) {
 function fitCamera(sz) {
   const maxD = Math.max(sz.x, sz.y, sz.z);
   const fovR = camera.fov * Math.PI / 180;
-  let dist = (maxD / 2) / Math.tan(fovR / 2) * 2.4;
+  let dist = (maxD / 2) / Math.tan(fovR / 2) * 2.2;
   controls.target.set(0, 0, 0);
-  camera.position.set(dist * .35, -dist * .85, dist * .6);
+  // Position camera perpendicular to slice axis so slices are visible as 3D fins
+  const axIdx = {X:0,Y:1,Z:2}[currentAxis];
+  const positions = [
+    new THREE.Vector3(dist*.1,  -dist*.9, dist*.55),  // X slices → look from Y
+    new THREE.Vector3(dist*.9,  -dist*.1, dist*.55),  // Y slices → look from X
+    new THREE.Vector3(dist*.65, -dist*.65, dist*.7),  // Z slices → diagonal above
+  ];
+  camera.position.copy(positions[axIdx]);
   camera.near = dist * .001;
   camera.far  = dist * 200;
   camera.updateProjectionMatrix();
@@ -1166,15 +1186,28 @@ const clock = new THREE.Clock();
   requestAnimationFrame(loop);
   const delta = clock.getDelta();
   controls.update();
+
+  const vp = document.getElementById('viewport');
+  const W = vp.clientWidth, H = vp.clientHeight;
+  const SZ = 96;
+
+  renderer.autoClear = false;
+  renderer.setViewport(0, 0, W, H);
+  renderer.setScissor(0, 0, W, H);
+  renderer.setScissorTest(true);
   renderer.clear();
   renderer.render(scene, camera);
 
-  // ViewHelper
+  // ViewHelper in bottom-right corner
   if (viewHelper) {
-    viewHelper.update(delta);
-    vhRenderer.clear();
-    viewHelper.render(vhRenderer);
+    renderer.setViewport(W - SZ, 0, SZ, SZ);
+    renderer.setScissor(W - SZ, 0, SZ, SZ);
+    renderer.clear(false, true, false);
+    viewHelper.render(renderer);
   }
+
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, W, H);
 })();
 
 /* ─── expose to global scope ───────────────── */
