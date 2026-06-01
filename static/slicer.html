@@ -716,6 +716,7 @@ window._setAxisInternal = function(ax) {
 /* ─── non-module UI logic ──────────────────── */
 
 let currentAxis = 'Y';
+let storedFile = null; // always holds the current file regardless of how it was loaded
 
 function dzClick() {
   if (!document.getElementById('dz').classList.contains('loaded'))
@@ -748,6 +749,7 @@ function onFile(f) {
   document.getElementById('dzName').textContent = f.name;
   document.getElementById('dzSub').textContent =
     (f.size / 1048576).toFixed(1) + ' MB';
+  storedFile = f;
   window._loadSTL(f);
 }
 
@@ -759,6 +761,7 @@ function clearFile(e) {
   document.getElementById('dzName').textContent = 'Drop STL file here';
   document.getElementById('dzSub').textContent = 'or click to browse';
   document.getElementById('fileInput').value = '';
+  storedFile = null;
   document.getElementById('genBtn').disabled = true;
   document.getElementById('hint').classList.remove('off');
   document.getElementById('hudInfo').style.display = 'none';
@@ -782,8 +785,8 @@ function onParams() {
 }
 
 async function generate() {
-  const f = document.getElementById('fileInput').files[0];
-  if (!f) return;
+  const f = storedFile;
+  if (!f) { showToast('Сначала загрузи STL файл'); return; }
 
   const btn   = document.getElementById('genBtn');
   const spin  = document.getElementById('genSpin');
