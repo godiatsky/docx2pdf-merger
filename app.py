@@ -397,6 +397,15 @@ def api_slice():
             except Exception:
                 pass
 
+        # Center the mesh at the origin. All cutters (box and lens) are built
+        # around the origin on the non-slice axes, so an off-origin model would
+        # only be partially intersected (or missed entirely). This also matches
+        # the front-end preview, which centers the geometry.
+        try:
+            mesh.apply_translation(-mesh.bounds.mean(axis=0))
+        except Exception:
+            pass
+
         lo  = float(mesh.bounds[0][ax])
         hi  = float(mesh.bounds[1][ax])
         pitch     = (hi - lo) / slices_n

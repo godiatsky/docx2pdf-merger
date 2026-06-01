@@ -551,15 +551,32 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
   text-align:right;
 }
 
-/* ViewHelper canvas overlay */
-#viewHelperCanvas{
+/* Quick orthographic view buttons */
+.view-bar{
   position:absolute;
-  bottom:70px;
-  right:16px;
-  width:96px;
-  height:96px;
+  left:16px;
+  bottom:16px;
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  max-width:320px;
+}
+.view-bar button{
+  background:rgba(20,20,24,.82);
+  border:1px solid #2c2c32;
+  color:var(--text3);
+  font:600 11px/1 'DM Mono',monospace;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  padding:7px 10px;
+  border-radius:7px;
   cursor:pointer;
-  pointer-events:auto;
+  transition:all .15s;
+}
+.view-bar button:hover{
+  border-color:var(--accent);
+  color:var(--accent);
+  background:rgba(40,36,28,.9);
 }
 
 /* Helper row */
@@ -828,6 +845,15 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
     <div class="hud-pill" id="hudInfo" style="display:none"></div>
   </div>
 
+  <div class="view-bar">
+    <button onclick="_snapToFace('FRONT')">Front</button>
+    <button onclick="_snapToFace('BACK')">Back</button>
+    <button onclick="_snapToFace('LEFT')">Left</button>
+    <button onclick="_snapToFace('RIGHT')">Right</button>
+    <button onclick="_snapToFace('TOP')">Top</button>
+    <button onclick="_snapToFace('BOTTOM')">Bottom</button>
+  </div>
+
   <div class="corner" id="corner"></div>
 </main>
 
@@ -847,7 +873,6 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
-import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
 
 /* ─── globals ──────────────────────────────── */
 let currentFile = null;
@@ -856,7 +881,6 @@ let mat = null;
 let modelLocalBounds = null;
 let currentAxis = 'Y';
 let bedMesh = null;
-let viewHelper = null;
 let printerBed = { w: 180, d: 180, h: 180 };
 let showBed = false;
 
@@ -879,34 +903,91 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.07;
 controls.screenSpacePanning = false;
 
-/* ─── ViewHelper ───────────────────────────── */
-viewHelper = new ViewHelper(camera, renderer.domElement);
-// OrbitControls uses .target; ViewHelper needs .center
-Object.defineProperty(controls, 'center', {
-  get() { return this.target; },
-  set(v) { this.target.copy(v); },
-  configurable: true,
-});
-viewHelper.controls = controls;
+/* ─── CAD-style View Cube ──────────────────────
+   A small cube in the bottom-right corner. Click a face to snap the
+   main camera to that orthographic view (front/back/left/right/top/bottom).
+   The cube mirrors the live camera orientation. Dragging not required. */
+const CUBE_SZ = 104;               // corner square size in px
+const cubeScene = new THREE.Scene();
+const cubeCam = new THREE.OrthographicCamera(-1.6, 1.6, 1.6, -1.6, 0.1, 100);
 
-// Handle clicks on the main canvas for the viewHelper corner area
-canvas.addEventListener('pointerup', e => {
-  const vp = document.getElementById('viewport');
+// face label → world direction the camera should sit on (target + dir*dist)
+const FACE_DIRS = {
+  RIGHT:  new THREE.Vector3( 1, 0, 0),
+  LEFT:   new THREE.Vector3(-1, 0, 0),
+  BACK:   new THREE.Vector3( 0, 1, 0),
+  FRONT:  new THREE.Vector3( 0,-1, 0),
+  TOP:    new THREE.Vector3( 0, 0, 1),
+  BOTTOM: new THREE.Vector3( 0, 0,-1),
+};
+// BoxGeometry material index order: +X,-X,+Y,-Y,+Z,-Z
+const FACE_ORDER = ['RIGHT','LEFT','BACK','FRONT','TOP','BOTTOM'];
+
+function makeFaceTex(label, accent) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = accent ? '#2a2620' : '#1c1c1f';
+  g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = '#3a3a40'; g.lineWidth = 5;
+  g.strokeRect(3, 3, 122, 122);
+  g.fillStyle = '#c8a45a';
+  g.font = 'bold 26px DM Mono, monospace';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(label, 64, 68);
+  const t = new THREE.CanvasTexture(c);
+  t.anisotropy = 4;
+  return t;
+}
+const cubeMats = FACE_ORDER.map(l => new THREE.MeshBasicMaterial({
+  map: makeFaceTex(l, l === 'FRONT'),
+}));
+const cubeMesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), cubeMats);
+cubeScene.add(cubeMesh);
+// thin edge outline so the cube reads as solid
+cubeScene.add(new THREE.LineSegments(
+  new THREE.EdgesGeometry(cubeMesh.geometry),
+  new THREE.LineBasicMaterial({ color: 0x55555f })
+));
+
+const cubeRay = new THREE.Raycaster();
+
+// Animate the main camera toward an orthographic direction
+let camAnim = null; // { fromPos, toPos, fromUp, toUp, t }
+function snapToFace(label) {
+  if (!modelLocalBounds) return;
+  const dir = FACE_DIRS[label];
+  const dist = camera.position.distanceTo(controls.target);
+  const toPos = controls.target.clone().addScaledVector(dir, dist);
+  // choose a sensible up: Z is vertical unless we look straight down/up
+  const toUp = (label === 'TOP' || label === 'BOTTOM')
+    ? new THREE.Vector3(0, 1, 0)
+    : new THREE.Vector3(0, 0, 1);
+  camAnim = {
+    fromPos: camera.position.clone(), toPos,
+    fromUp:  camera.up.clone(),       toUp,
+    t: 0,
+  };
+}
+window._snapToFace = snapToFace;
+
+// Click handling limited to the cube's corner square
+canvas.addEventListener('pointerdown', e => {
   const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  const W = vp.clientWidth, H = vp.clientHeight;
-  const SZ = 96;
-  if (x > W - SZ && y > H - SZ) {
-    // Remap click coordinates into the viewHelper's 96x96 square
-    const fake = new PointerEvent('pointerup', {
-      clientX: e.clientX - (rect.left + W - SZ),
-      clientY: e.clientY - (rect.top  + H - SZ),
-      bubbles: false,
-    });
-    viewHelper.handleClick(fake);
+  const W = rect.width, H = rect.height;
+  const lx = e.clientX - rect.left, ly = e.clientY - rect.top;
+  if (lx < W - CUBE_SZ || ly < H - CUBE_SZ) return; // outside cube corner
+  // NDC within the cube square
+  const nx = ((lx - (W - CUBE_SZ)) / CUBE_SZ) * 2 - 1;
+  const ny = -(((ly - (H - CUBE_SZ)) / CUBE_SZ) * 2 - 1);
+  cubeRay.setFromCamera({ x: nx, y: ny }, cubeCam);
+  const hit = cubeRay.intersectObject(cubeMesh, false)[0];
+  if (hit) {
+    const label = FACE_ORDER[Math.floor(hit.faceIndex / 2)];
+    snapToFace(label);
+    e.stopPropagation();
   }
-});
+}, true);
 
 function resize() {
   const vp = document.getElementById('viewport');
@@ -1177,12 +1258,23 @@ window.resetCam = function() {
 const clock = new THREE.Clock();
 (function loop() {
   requestAnimationFrame(loop);
-  const delta = clock.getDelta();
+
+  // Smooth camera snap animation (ease-in-out)
+  if (camAnim) {
+    camAnim.t = Math.min(1, camAnim.t + 0.08);
+    const e = camAnim.t < 0.5
+      ? 2 * camAnim.t * camAnim.t
+      : 1 - Math.pow(-2 * camAnim.t + 2, 2) / 2;
+    camera.position.lerpVectors(camAnim.fromPos, camAnim.toPos, e);
+    camera.up.lerpVectors(camAnim.fromUp, camAnim.toUp, e).normalize();
+    camera.lookAt(controls.target);
+    if (camAnim.t >= 1) camAnim = null;
+  }
   controls.update();
 
   const vp = document.getElementById('viewport');
   const W = vp.clientWidth, H = vp.clientHeight;
-  const SZ = 96;
+  const SZ = CUBE_SZ;
 
   renderer.autoClear = false;
   renderer.setViewport(0, 0, W, H);
@@ -1191,13 +1283,15 @@ const clock = new THREE.Clock();
   renderer.clear();
   renderer.render(scene, camera);
 
-  // ViewHelper in bottom-right corner
-  if (viewHelper) {
-    renderer.setViewport(W - SZ, 0, SZ, SZ);
-    renderer.setScissor(W - SZ, 0, SZ, SZ);
-    renderer.clear(false, true, false);
-    viewHelper.render(renderer);
-  }
+  // View cube in bottom-right corner — mirror the live camera direction
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  cubeCam.position.copy(dir.multiplyScalar(6));
+  cubeCam.up.copy(camera.up);
+  cubeCam.lookAt(0, 0, 0);
+  renderer.setViewport(W - SZ, 0, SZ, SZ);
+  renderer.setScissor(W - SZ, 0, SZ, SZ);
+  renderer.clearDepth();
+  renderer.render(cubeScene, cubeCam);
 
   renderer.setScissorTest(false);
   renderer.setViewport(0, 0, W, H);
