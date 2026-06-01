@@ -694,6 +694,7 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
       <input type="range" id="wWideSlider" min="0" max="200" value="0" oninput="onWWide(this.value)">
       <input type="number" class="num-input" id="wWideNum" value="0" min="0" max="20" step="0.5" oninput="onWWideNum(this.value)">
     </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:2px">slab thickness: <span id="wWideHint">—</span></div>
   </div>
 
   <div class="sl-group">
@@ -935,6 +936,8 @@ uniform float uMin;
 uniform float uMax;
 uniform float uWWide;
 uniform float uWNarrow;
+uniform float uZMin;
+uniform float uZMax;
 varying vec3 vPos;
 varying vec3 vWNorm;
 
@@ -946,27 +949,19 @@ void main(){
   float slabFrac = 1.-uGap;
   bool inSlab = within < slabFrac;
 
-  // lens check: if w_wide > 0, narrow at top/bottom of each slab
+  // Lens profile: width varies with world-Z height (wide at centre, narrow at top/bottom)
   bool isInsideLens = true;
-  if(inSlab && uWWide > 0.001){
-    // position within slab: 0=bottom edge, 1=top edge, 0.5=center
-    float slabPos = within / slabFrac; // 0..1
-    float slabCenter = 0.5;
-    float distFromCenter = abs(slabPos - slabCenter) * 2.0; // 0=center,1=edge
-    // cos^2 profile: w(t) = wNarrow + (wWide-wNarrow)*cos^2(t*PI/2)
-    float cosVal = cos(distFromCenter * 3.14159 / 2.0);
-    float wFrac = uWNarrow + (uWWide - uWNarrow) * cosVal * cosVal;
+  if(inSlab && uWWide > 0.001 && uAxis != 2){
+    float zRange = uZMax - uZMin;
+    float zNorm  = zRange > 0.001 ? (vPos.z - uZMin) / zRange : 0.5; // 0=bottom, 1=top
+    float tZ     = 2.0 * abs(zNorm - 0.5);          // 0 at mid-height, 1 at top/bot
+    float cosVal = cos(tZ * 3.14159 / 2.0);
+    float halfW  = (uWNarrow + (uWWide - uWNarrow) * cosVal * cosVal) * 0.5;
 
-    // get perpendicular position
-    float q;
-    if(uAxis==0) q = vPos.y;
-    else if(uAxis==1) q = vPos.x;
-    else q = vPos.x;
-    float halfSpan = (uMax - uMin) / (2.0 * uSlices);
-    float halfW = wFrac * halfSpan;
-    float slabCenter3d = uMin + (floor(t / pitch) + 0.5) * (uMax-uMin) / uSlices;
-    float qDist = abs(q);
-    isInsideLens = qDist <= halfW;
+    // Distance of fragment from its slab centre along the slice axis (in model units)
+    float slabCenter3d = uMin + (floor(t / pitch) + 0.5) * (uMax - uMin) / uSlices;
+    float axDist = abs(p - slabCenter3d);
+    isInsideLens = axDist <= halfW;
   }
 
   bool slab = inSlab && isInsideLens;
@@ -995,6 +990,8 @@ function makeMat(bMin, bMax) {
       uMax:     { value: bMax },
       uWWide:   { value: 0.0 },
       uWNarrow: { value: 0.0 },
+      uZMin:    { value: 0.0 },
+      uZMax:    { value: 1.0 },
     },
     side: THREE.DoubleSide,
   });
@@ -1024,21 +1021,16 @@ function syncUniforms() {
   const wWide   = parseFloat(document.getElementById('wWideNum').value) || 0;
   const wNarrow = parseFloat(document.getElementById('wNarrowNum').value) || 0;
 
-  const span = modelLocalBounds.max.getComponent(axIdx) - modelLocalBounds.min.getComponent(axIdx);
-  const pitch = span / slices;
-  const slabThick = pitch * (1 - gap);
-
-  // Convert mm to fraction of half-slab for shader
-  const wWideFrac   = wWide   > 0 ? (wWide   / slabThick) : 0;
-  const wNarrowFrac = wNarrow > 0 ? (wNarrow / slabThick) : wWideFrac;
-
   mat.uniforms.uSlices.value  = slices;
   mat.uniforms.uGap.value     = gap;
   mat.uniforms.uAxis.value    = axIdx;
   mat.uniforms.uMin.value     = modelLocalBounds.min.getComponent(axIdx);
   mat.uniforms.uMax.value     = modelLocalBounds.max.getComponent(axIdx);
-  mat.uniforms.uWWide.value   = wWideFrac;
-  mat.uniforms.uWNarrow.value = wNarrowFrac;
+  // Pass raw mm values; shader compares against model-unit distances
+  mat.uniforms.uWWide.value   = wWide;
+  mat.uniforms.uWNarrow.value = wNarrow > 0 ? wNarrow : wWide;
+  mat.uniforms.uZMin.value    = modelLocalBounds.min.z;
+  mat.uniforms.uZMax.value    = modelLocalBounds.max.z;
 }
 
 /* ─── stats panel ──────────────────────────── */
@@ -1068,6 +1060,7 @@ function updateStats() {
   document.getElementById('stPitch').textContent = fmt(pitch);
   document.getElementById('stSlab').textContent  = fmt(slab);
   document.getElementById('stGap').textContent   = fmt(gapMm);
+  document.getElementById('wWideHint').textContent = slab.toFixed(2) + ' mm (max)';
   document.getElementById('progBar').style.width = `${(1-gap)*100}%`;
 
   // Lens stats

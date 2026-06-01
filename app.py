@@ -135,23 +135,27 @@ def _facade_cut(mesh, axis_idx, depth_ratio):
     return mesh
 
 
-def _make_lens_cutter(w_wide, w_narrow, z_min, z_max, big, ax, center):
-    """Create a lens/leaf shaped cutting tool along the given axis."""
+def _make_lens_cutter(w_wide, w_narrow, mesh_z_min, mesh_z_max, big, ax, center):
+    """Create a lens/leaf shaped cutting tool along the given axis.
+
+    The lens narrows from w_wide (at mid model height) to w_narrow (at top/bottom).
+    mesh_z_min/mesh_z_max are the actual world-Z bounds of the model.
+    """
     import trimesh
     import numpy as np
 
     try:
         from shapely.geometry import Polygon
 
-        z_center = (z_min + z_max) / 2.0
-        z_half = (z_max - z_min) / 2.0
+        z_center = (mesh_z_min + mesh_z_max) / 2.0
+        z_half = (mesh_z_max - mesh_z_min) / 2.0
 
         if z_half <= 0 or w_wide <= 0:
             raise ValueError("Invalid dimensions")
 
-        # Build profile: (z, w) pairs
-        n_pts = 32
-        zs = np.linspace(z_min, z_max, n_pts)
+        # Build profile: (width, world_z) pairs spanning full model height
+        n_pts = 48
+        zs = np.linspace(mesh_z_min, mesh_z_max, n_pts)
         ws = []
         for z in zs:
             # cos² profile: wide at center, narrow at ends
@@ -399,20 +403,27 @@ def api_slice():
         thickness = pitch * (1.0 - gap)
         big       = float(max(mesh.extents) * 10)
 
+        # World-Z bounds for lens profile (varies with height, not slice axis)
+        mesh_z_min = float(mesh.bounds[0][2])
+        mesh_z_max = float(mesh.bounds[1][2])
+
         # Determine lens parameters
         use_lens = (w_wide_raw > 0) and (ax != 2)
         w_wide   = w_wide_raw if w_wide_raw > 0 else thickness
         w_narrow = w_narrow_raw if w_narrow_raw > 0 else w_wide
 
+        # Clamp w_wide so slab can't overlap adjacent slabs
+        if use_lens:
+            w_wide   = min(w_wide, thickness * 0.99)
+            w_narrow = min(w_narrow, w_wide)
+
         slabs = []
         for i in range(slices_n):
             center  = lo + (i + 0.5) * pitch
-            z_min   = center - thickness / 2.0
-            z_max   = center + thickness / 2.0
 
             if use_lens:
                 try:
-                    cutter = _make_lens_cutter(w_wide, w_narrow, z_min, z_max, big, ax, center)
+                    cutter = _make_lens_cutter(w_wide, w_narrow, mesh_z_min, mesh_z_max, big, ax, center)
                 except Exception:
                     # fall back to box
                     extents = [big, big, big]
