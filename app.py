@@ -120,29 +120,26 @@ def _repair_mesh(mesh):
     return mesh
 
 
-def _slab_box_fallback(mesh, ax, center, thickness):
-    """Extract a rectangular slab using plane cuts (works on open meshes).
+def _extract_slab(mesh, ax, center, thickness):
+    """Extract a watertight slab from the mesh using two plane cuts.
 
-    Used when the manifold boolean fails (e.g. the input could not be made
-    fully watertight). Produces a plain box slab — no lens profile — so the
-    user still gets usable output instead of a missing slice.
+    slice_mesh_plane with cap=True closes the cut surface, producing a
+    watertight solid even when the input mesh has holes/open edges. The
+    returned slab can then safely be used in manifold boolean operations.
     """
     import trimesh
     import numpy as np
     try:
-        lo = center - thickness / 2.0
-        hi = center + thickness / 2.0
-        n_lo = np.zeros(3); n_lo[ax] = 1.0
-        n_hi = np.zeros(3); n_hi[ax] = -1.0
-        o_lo = np.zeros(3); o_lo[ax] = lo
-        o_hi = np.zeros(3); o_hi[ax] = hi
-        m = trimesh.intersections.slice_mesh_plane(mesh, n_lo, o_lo, cap=True)
-        if m is None or len(m.faces) == 0:
+        lo, hi = center - thickness / 2.0, center + thickness / 2.0
+        n_lo = np.zeros(3); n_lo[ax] =  1.0; o_lo = np.zeros(3); o_lo[ax] = lo
+        n_hi = np.zeros(3); n_hi[ax] = -1.0; o_hi = np.zeros(3); o_hi[ax] = hi
+        s = trimesh.intersections.slice_mesh_plane(mesh, n_lo, o_lo, cap=True)
+        if s is None or len(s.faces) == 0:
             return None
-        m = trimesh.intersections.slice_mesh_plane(m, n_hi, o_hi, cap=True)
-        if m is None or len(m.faces) == 0:
+        s = trimesh.intersections.slice_mesh_plane(s, n_hi, o_hi, cap=True)
+        if s is None or len(s.faces) == 0:
             return None
-        return m
+        return s
     except Exception:
         return None
 
@@ -481,46 +478,47 @@ def api_slice():
 
         slabs = []
         for i in range(slices_n):
-            center  = lo + (i + 0.5) * pitch
+            center = lo + (i + 0.5) * pitch
 
+            # Step 1: plane-cut the slab — works on any mesh, cap=True makes
+            # the result watertight so Step 2 boolean always succeeds.
+            slab = _extract_slab(mesh, ax, center, thickness)
+            if slab is None or len(slab.faces) == 0:
+                continue
+
+            # Step 2: apply lens profile.
+            # Split the slab into individual bodies (e.g. separate letters),
+            # repair each body to watertight, then boolean-intersect with the
+            # lens cutter per body. This reliably handles the multi-body
+            # non-watertight slabs produced by slice_mesh_plane on complex logos.
             if use_lens:
                 try:
-                    cutter = _make_lens_cutter(w_wide, w_narrow, mesh_z_min, mesh_z_max, big, ax, center)
+                    cutter = _make_lens_cutter(
+                        w_wide, w_narrow, mesh_z_min, mesh_z_max, big, ax, center
+                    )
+                    bodies = slab.split()
+                    lens_parts = []
+                    for body in bodies:
+                        _repair_mesh(body)
+                        try:
+                            sl = body.intersection(cutter, engine='manifold')
+                            if sl is not None and len(sl.faces) > 0:
+                                lens_parts.append(sl)
+                            else:
+                                lens_parts.append(body)
+                        except Exception:
+                            lens_parts.append(body)
+                    if lens_parts:
+                        slab = trimesh.util.concatenate(lens_parts)
                 except Exception:
-                    # fall back to box
-                    extents = [big, big, big]
-                    extents[ax] = thickness
-                    t = np.eye(4)
-                    t[ax, 3] = center
-                    cutter = trimesh.creation.box(extents=extents, transform=t)
-            else:
-                extents = [big, big, big]
-                extents[ax] = thickness
-                t = np.eye(4)
-                t[ax, 3] = center
-                cutter = trimesh.creation.box(extents=extents, transform=t)
+                    pass  # keep rectangular slab
 
-            slab = None
-            try:
-                slab = mesh.intersection(cutter, engine='manifold')
-                if slab is not None and len(slab.faces) == 0:
-                    slab = None
-            except Exception:
-                slab = None
-
-            # If the boolean failed (e.g. mesh still not a clean volume),
-            # fall back to a plane-sliced rectangular slab so the slice is
-            # not silently dropped.
-            if slab is None:
-                slab = _slab_box_fallback(mesh, ax, center, thickness)
-
-            if slab is not None and len(slab.faces) > 0:
-                if numbering_on:
-                    try:
-                        slab = _engrave_number(slab, i + 1, ax, num_size)
-                    except Exception:
-                        pass
-                slabs.append(slab)
+            if numbering_on:
+                try:
+                    slab = _engrave_number(slab, i + 1, ax, num_size)
+                except Exception:
+                    pass
+            slabs.append(slab)
 
         if not slabs:
             return jsonify(error='Не удалось нарезать модель'), 500

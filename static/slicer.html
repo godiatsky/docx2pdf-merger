@@ -602,11 +602,13 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
   <!-- Upload -->
   <div class="dropzone" id="dz"
        onclick="dzClick()"
+       ondragenter="dzOver(event)"
        ondragover="dzOver(event)"
        ondragleave="dzLeave()"
        ondrop="dzDrop(event)">
     <input type="file" id="fileInput" accept=".stl" onchange="onFile(this.files[0])">
-    <button class="dz-x" onclick="clearFile(event)">✕</button>
+    <button class="dz-x" ondragenter="dzOver(event)" ondragover="dzOver(event)"
+            ondrop="dzDrop(event)" onclick="clearFile(event)">✕</button>
     <div class="dz-ico" id="dzIco">◈</div>
     <div class="dz-name" id="dzName">Drop STL file here</div>
     <div class="dz-sub" id="dzSub">or click to browse</div>
@@ -893,6 +895,10 @@ renderer.shadowMap.enabled = false;
 renderer.autoClear = false;
 
 const scene = new THREE.Scene();
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+sunLight.position.set(0.8, 0.4, 1.8);
+scene.add(sunLight);
 
 const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 50000);
 camera.position.set(0, -300, 200);
@@ -1078,6 +1084,22 @@ function makeMat(bMin, bMax) {
   });
 }
 
+/* ─── preview base plate ───────────────────── */
+let basePlateMesh = null;
+function updateBasePreview() {
+  if (basePlateMesh) { scene.remove(basePlateMesh); basePlateMesh.geometry.dispose(); basePlateMesh = null; }
+  if (!modelLocalBounds || window.baseMode !== 'with') return;
+  const bt = parseFloat(document.getElementById('baseThickSlider').value) || 3;
+  const bx = modelLocalBounds.max.x - modelLocalBounds.min.x + 4;
+  const by = modelLocalBounds.max.y - modelLocalBounds.min.y + 4;
+  const geo = new THREE.BoxGeometry(bx, by, bt);
+  const mat2 = new THREE.MeshStandardMaterial({ color: 0xc8a45a, roughness: 0.5, metalness: 0.1, transparent: true, opacity: 0.65 });
+  basePlateMesh = new THREE.Mesh(geo, mat2);
+  basePlateMesh.position.set(0, 0, modelLocalBounds.min.z - bt / 2);
+  scene.add(basePlateMesh);
+}
+window._updateBasePreview = updateBasePreview;
+
 /* ─── bed helper ───────────────────────────── */
 function updateBed() {
   if (bedMesh) { scene.remove(bedMesh); bedMesh.geometry.dispose(); bedMesh = null; }
@@ -1186,6 +1208,7 @@ function loadSTL(file) {
     fitCamera(sz);
     syncUniforms();
     updateStats();
+    updateBasePreview();
 
     // Apply visual scale if set
     const scaleStr = document.getElementById('scaleInput').value.trim();
@@ -1332,7 +1355,8 @@ window._applyVisualScale = function(scaleStr) {
 
 let currentAxis = 'Y';
 let storedFile = null;
-let baseMode = 'none';
+window.baseMode = 'none';
+let baseMode = window.baseMode;
 
 const PRINTER_PRESETS = {
   bambu_a1mini: { w: 180, d: 180, h: 180 },
@@ -1378,8 +1402,7 @@ function onShowBed() {
 
 /* ─── drop zone ────────────────────────────── */
 function dzClick() {
-  if (!document.getElementById('dz').classList.contains('loaded'))
-    document.getElementById('fileInput').click();
+  document.getElementById('fileInput').click();
 }
 
 function dzOver(e) {
@@ -1408,8 +1431,11 @@ function onFile(f) {
   document.getElementById('dzName').textContent = f.name;
   document.getElementById('dzSub').textContent =
     (f.size / 1048576).toFixed(1) + ' MB';
+  // Reset fileInput so the same file can be re-selected
+  document.getElementById('fileInput').value = '';
   storedFile = f;
-  window._loadSTL(f);
+  if (window._loadSTL) window._loadSTL(f);
+  else showToast('3D viewer not yet ready — please wait a moment');
 }
 
 function clearFile(e) {
@@ -1559,14 +1585,16 @@ function updateLensDiagram() {
 
 /* ─── base ─────────────────────────────────── */
 function setBase(mode) {
-  baseMode = mode;
+  baseMode = window.baseMode = mode;
   document.getElementById('baseNoneBtn').classList.toggle('on', mode === 'none');
   document.getElementById('baseWithBtn').classList.toggle('on', mode === 'with');
   document.getElementById('baseThickRow').style.display = mode === 'with' ? '' : 'none';
+  if (window._updateBasePreview) window._updateBasePreview();
 }
 
 function onBaseThick(val) {
   document.getElementById('baseThickVal').textContent = parseFloat(val).toFixed(1) + ' mm';
+  if (window._updateBasePreview) window._updateBasePreview();
 }
 
 /* ─── facade ───────────────────────────────── */
