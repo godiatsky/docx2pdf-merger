@@ -1093,18 +1093,19 @@ function makeMat(bMin, bMax) {
 /* ─── preview base plate ───────────────────── */
 let basePlateMesh = null;
 
-// Determine which axes the base spans. The base is a thin backing panel:
-//  - 1mm thick along the DEPTH axis (smallest of the two non-slice extents)
-//  - spans the slice axis (width) and the height axis (the larger non-slice extent)
-// This matches the backend exactly so preview == export.
+// Deterministic axis mapping — matches the Python backend exactly.
+// DEPTH : axis the panel is thin along (1mm)
+// HEIGHT: axis the panel spans vertically (the "length" slider)
+// ax=X(0) → depth=Y(1), height=Z(2)
+// ax=Y(1) → depth=X(0), height=Z(2)
+// ax=Z(2) → depth=Y(1), height=X(0)
 function baseAxes() {
   const ax = { X: 0, Y: 1, Z: 2 }[currentAxis];
+  const DEPTH  = ax === 0 ? 1 : ax === 1 ? 0 : 1;
+  const HEIGHT = ax === 2 ? 0 : 2;
   const ext = modelLocalBounds.getSize(new THREE.Vector3());
   const e = [ext.x, ext.y, ext.z];
-  const others = [0, 1, 2].filter(i => i !== ax);
-  const depthAxis  = e[others[0]] <= e[others[1]] ? others[0] : others[1];
-  const heightAxis = depthAxis === others[0] ? others[1] : others[0];
-  return { ax, depthAxis, heightAxis, e };
+  return { ax, depthAxis: DEPTH, heightAxis: HEIGHT, e };
 }
 
 function updateBasePreview() {

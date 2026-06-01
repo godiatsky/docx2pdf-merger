@@ -248,46 +248,42 @@ def _make_lens_cutter(w_wide, w_narrow, mesh_z_min, mesh_z_max, big, ax, center)
         return trimesh.creation.box(extents=extents, transform=t)
 
 
-def _make_base_plate(slabs_combined, ax, base_width=0, base_length=0):
-    """Create a 1mm-thick backing panel for the sliced mesh.
+def _make_base_plate(slabs_combined, ax, base_width=0, base_length=0, mesh_bounds=None):
+    """Create a 1mm-thick backing panel flush against the back of the sliced mesh.
 
-    The panel is a thin (1mm) plate parallel to the "image plane" of the
-    piece — perpendicular to the slabs — so it reads like the backing of a
-    wall-hung painting. It is:
-      - 1mm thick along the DEPTH axis (smallest of the two non-slice extents)
-      - spans base_width along the slice axis and base_length along the height
-        axis (the larger non-slice extent)
-      - flush against the back (depth-min) face of the model
+    Axes (deterministic, does not depend on model extents):
+      - Thin (1mm) along DEPTH_AXIS: perpendicular to both slice axis and Z.
+          ax=X → depth=Y;  ax=Y → depth=X;  ax=Z → depth=Y
+      - base_width spans the SLICE axis (ax)
+      - base_length spans the HEIGHT axis (Z, or X when ax=Z)
 
-    base_width / base_length: explicit mm values; 0 means auto (extent + 20mm).
+    mesh_bounds is preferred over slabs_combined.bounds so the panel covers
+    the full model even when some slabs failed intersection.
     """
     import trimesh
     import numpy as np
 
+    DEPTH  = {0: 1, 1: 0, 2: 1}[ax]
+    HEIGHT = {0: 2, 1: 2, 2: 0}[ax]
+
     try:
-        bounds = slabs_combined.bounds
-        ext    = slabs_combined.extents
+        bounds = mesh_bounds if mesh_bounds is not None else slabs_combined.bounds
+        ext    = bounds[1] - bounds[0]
 
-        others = [i for i in range(3) if i != ax]
-        depth_axis  = others[0] if ext[others[0]] <= ext[others[1]] else others[1]
-        height_axis = others[1] if depth_axis == others[0] else others[0]
+        bw = float(base_width)  if base_width  > 0 else float(ext[ax])     + 20.0
+        bl = float(base_length) if base_length > 0 else float(ext[HEIGHT]) + 20.0
 
-        bw = float(base_width)  if base_width  > 0 else float(ext[ax])          + 20.0
-        bl = float(base_length) if base_length > 0 else float(ext[height_axis]) + 20.0
-
-        extents = [1.0, 1.0, 1.0]
-        extents[ax]          = bw
-        extents[height_axis] = bl
-        extents[depth_axis]  = 1.0  # 1mm thick
+        plate = [1.0, 1.0, 1.0]
+        plate[ax]     = bw
+        plate[HEIGHT] = bl
+        plate[DEPTH]  = 1.0  # 1mm
 
         center = [(bounds[0][i] + bounds[1][i]) / 2.0 for i in range(3)]
-        center[depth_axis] = float(bounds[0][depth_axis]) - 0.5  # flush at back face
+        center[DEPTH] = float(bounds[0][DEPTH]) - 0.5   # flush at back face
 
         t = np.eye(4)
         t[:3, 3] = center
-
-        base = trimesh.creation.box(extents=extents, transform=t)
-        return base
+        return trimesh.creation.box(extents=plate, transform=t)
     except Exception:
         return None
 
@@ -529,7 +525,7 @@ def api_slice():
         # Add base plate
         if base_mode == 'with':
             try:
-                base = _make_base_plate(combined, ax, base_width, base_length)
+                base = _make_base_plate(combined, ax, base_width, base_length, mesh.bounds)
                 if base is not None:
                     combined = trimesh.util.concatenate([combined, base])
             except Exception:
