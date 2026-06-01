@@ -1092,16 +1092,43 @@ function makeMat(bMin, bMax) {
 
 /* ─── preview base plate ───────────────────── */
 let basePlateMesh = null;
+
+// Determine which axes the base spans. The base is a thin backing panel:
+//  - 1mm thick along the DEPTH axis (smallest of the two non-slice extents)
+//  - spans the slice axis (width) and the height axis (the larger non-slice extent)
+// This matches the backend exactly so preview == export.
+function baseAxes() {
+  const ax = { X: 0, Y: 1, Z: 2 }[currentAxis];
+  const ext = modelLocalBounds.getSize(new THREE.Vector3());
+  const e = [ext.x, ext.y, ext.z];
+  const others = [0, 1, 2].filter(i => i !== ax);
+  const depthAxis  = e[others[0]] <= e[others[1]] ? others[0] : others[1];
+  const heightAxis = depthAxis === others[0] ? others[1] : others[0];
+  return { ax, depthAxis, heightAxis, e };
+}
+
 function updateBasePreview() {
   if (basePlateMesh) { scene.remove(basePlateMesh); basePlateMesh.geometry.dispose(); basePlateMesh = null; }
   if (!modelLocalBounds || window.baseMode !== 'with') return;
-  const bt = 1;
-  const bx = parseFloat(document.getElementById('baseWidthSlider').value) || 200;
-  const by = parseFloat(document.getElementById('baseLengthSlider').value) || 200;
-  const geo = new THREE.BoxGeometry(bx, by, bt);
+
+  const { ax, depthAxis, heightAxis } = baseAxes();
+  const bw = parseFloat(document.getElementById('baseWidthSlider').value)  || 200; // along slice axis
+  const bl = parseFloat(document.getElementById('baseLengthSlider').value) || 200; // along height axis
+
+  const ext = [1, 1, 1];
+  ext[ax]         = bw;
+  ext[heightAxis] = bl;
+  ext[depthAxis]  = 1; // 1mm thick
+
+  const geo = new THREE.BoxGeometry(ext[0], ext[1], ext[2]);
   const mat2 = new THREE.MeshStandardMaterial({ color: 0xc8a45a, roughness: 0.5, metalness: 0.1, transparent: true, opacity: 0.65 });
   basePlateMesh = new THREE.Mesh(geo, mat2);
-  basePlateMesh.position.set(0, 0, modelLocalBounds.min.z - bt / 2);
+
+  // Model is centred at origin, so slice/height stay at 0; sit the panel flush
+  // against the back (depth-min) face of the model.
+  const pos = [0, 0, 0];
+  pos[depthAxis] = modelLocalBounds.min.getComponent(depthAxis) - 0.5;
+  basePlateMesh.position.set(pos[0], pos[1], pos[2]);
   scene.add(basePlateMesh);
 }
 window._updateBasePreview = updateBasePreview;
@@ -1202,9 +1229,11 @@ function loadSTL(file) {
     modelLocalBounds = geo.boundingBox.clone();
     const sz = modelLocalBounds.getSize(new THREE.Vector3());
 
-    // Auto-set base size defaults from model bounds (model + 20mm border)
-    const autoW = Math.round(sz.x + 20);
-    const autoL = Math.round(sz.y + 20);
+    // Auto-set base size defaults: width spans the slice axis, length spans
+    // the height axis (both = model extent + 20mm border).
+    const ba = baseAxes();
+    const autoW = Math.round(ba.e[ba.ax]         + 20);
+    const autoL = Math.round(ba.e[ba.heightAxis] + 20);
     const wSlider = document.getElementById('baseWidthSlider');
     const lSlider = document.getElementById('baseLengthSlider');
     wSlider.max = Math.max(500, autoW * 2);
@@ -1349,6 +1378,19 @@ window._setAxisInternal = function(ax) {
     mat.uniforms.uAxis.value = axIdx;
     mat.uniforms.uMin.value  = modelLocalBounds.min.getComponent(axIdx);
     mat.uniforms.uMax.value  = modelLocalBounds.max.getComponent(axIdx);
+    // Re-default base size for the new slice axis and refresh the panel.
+    const ba = baseAxes();
+    const autoW = Math.round(ba.e[ba.ax]         + 20);
+    const autoL = Math.round(ba.e[ba.heightAxis] + 20);
+    const wSlider = document.getElementById('baseWidthSlider');
+    const lSlider = document.getElementById('baseLengthSlider');
+    wSlider.max = Math.max(500, autoW * 2);
+    lSlider.max = Math.max(500, autoL * 2);
+    wSlider.value = autoW;
+    lSlider.value = autoL;
+    document.getElementById('baseWidthVal').textContent  = autoW + ' mm';
+    document.getElementById('baseLengthVal').textContent = autoL + ' mm';
+    updateBasePreview();
   }
 };
 window._setPrinterBed = function(w, d, h) {
