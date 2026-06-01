@@ -120,28 +120,6 @@ def _repair_mesh(mesh):
     return mesh
 
 
-def _extract_slab(mesh, ax, center, thickness):
-    """Extract a watertight slab from the mesh using two plane cuts.
-
-    slice_mesh_plane with cap=True closes the cut surface, producing a
-    watertight solid even when the input mesh has holes/open edges. The
-    returned slab can then safely be used in manifold boolean operations.
-    """
-    import trimesh
-    import numpy as np
-    try:
-        lo, hi = center - thickness / 2.0, center + thickness / 2.0
-        n_lo = np.zeros(3); n_lo[ax] =  1.0; o_lo = np.zeros(3); o_lo[ax] = lo
-        n_hi = np.zeros(3); n_hi[ax] = -1.0; o_hi = np.zeros(3); o_hi[ax] = hi
-        s = trimesh.intersections.slice_mesh_plane(mesh, n_lo, o_lo, cap=True)
-        if s is None or len(s.faces) == 0:
-            return None
-        s = trimesh.intersections.slice_mesh_plane(s, n_hi, o_hi, cap=True)
-        if s is None or len(s.faces) == 0:
-            return None
-        return s
-    except Exception:
-        return None
 
 
 def _facade_cut(mesh, axis_idx, depth_ratio):
@@ -150,31 +128,27 @@ def _facade_cut(mesh, axis_idx, depth_ratio):
         import trimesh
         import numpy as np
 
-        # The two axes perpendicular to the slice axis
         perp = [i for i in range(3) if i != axis_idx]
-
-        # Find which perpendicular axis has larger extent (that's "depth")
         extents = mesh.extents
-        if extents[perp[0]] >= extents[perp[1]]:
-            depth_ax = perp[0]
-        else:
-            depth_ax = perp[1]
+        depth_ax = perp[0] if extents[perp[0]] >= extents[perp[1]] else perp[1]
 
         lo = float(mesh.bounds[0][depth_ax])
         hi = float(mesh.bounds[1][depth_ax])
         depth_span = hi - lo
 
-        # Keep front depth_ratio fraction (from lo side)
-        cut_at = lo + depth_span * depth_ratio
+        kept_size = depth_span * depth_ratio
+        center_val = lo + kept_size / 2.0
 
-        plane_normal = np.zeros(3)
-        plane_normal[depth_ax] = -1.0  # normal pointing away from kept region
-        plane_origin = np.zeros(3)
-        plane_origin[depth_ax] = cut_at
+        big = float(max(mesh.extents) * 10)
+        box_extents = [big, big, big]
+        box_extents[depth_ax] = kept_size
 
-        result = trimesh.intersections.slice_mesh_plane(
-            mesh, plane_normal, plane_origin, cap=True
-        )
+        T = np.eye(4)
+        T[depth_ax, 3] = center_val
+        box = trimesh.creation.box(extents=box_extents, transform=T)
+
+        _repair_mesh(mesh)
+        result = mesh.intersection(box, engine='manifold')
         if result is not None and len(result.faces) > 0:
             return result
     except Exception:
@@ -205,12 +179,10 @@ def _make_lens_cutter(w_wide, w_narrow, mesh_z_min, mesh_z_max, big, ax, center)
         zs = np.linspace(mesh_z_min, mesh_z_max, n_pts)
         ws = []
         for z in zs:
-            # cos² profile: wide at center, narrow at ends
-            t = (z - z_center) / z_half  # -1..1
-            # clamp to avoid numerical issues
-            t = max(-1.0, min(1.0, t))
-            cos_val = np.cos(t * np.pi / 2.0)
-            w = w_narrow + (w_wide - w_narrow) * cos_val ** 2
+            # Parabolic profile: wide at center, narrow at top/bottom
+            t = abs(z - z_center) / z_half  # 0=center, 1=edge
+            t = min(1.0, t)
+            w = w_wide - (w_wide - w_narrow) * t * t
             ws.append(w)
 
         # Build 2D polygon in (ax_coord, Z) plane
@@ -453,8 +425,13 @@ def api_slice():
         except Exception:
             pass
 
-        # Repair to a watertight solid so the manifold engine accepts it.
-        mesh = _repair_mesh(mesh)
+        # Repair whole mesh then split into individual watertight bodies.
+        # This is the rtree-free path: box intersections via manifold engine,
+        # no slice_mesh_plane(cap=True) which requires rtree.
+        _repair_mesh(mesh)
+        bodies = [b for b in mesh.split() if len(b.faces) > 0]
+        for b in bodies:
+            _repair_mesh(b)
 
         lo  = float(mesh.bounds[0][ax])
         hi  = float(mesh.bounds[1][ax])
@@ -480,38 +457,47 @@ def api_slice():
         for i in range(slices_n):
             center = lo + (i + 0.5) * pitch
 
-            # Step 1: plane-cut the slab — works on any mesh, cap=True makes
-            # the result watertight so Step 2 boolean always succeeds.
-            slab = _extract_slab(mesh, ax, center, thickness)
-            if slab is None or len(slab.faces) == 0:
+            # Build a box cutter for this slab
+            box_extents = [big, big, big]
+            box_extents[ax] = thickness
+            T_box = np.eye(4)
+            T_box[ax, 3] = center
+            box_cutter = trimesh.creation.box(extents=box_extents, transform=T_box)
+
+            # Intersect each body with the slab box
+            slab_parts = []
+            for body in bodies:
+                try:
+                    s = body.intersection(box_cutter, engine='manifold')
+                    if s is not None and len(s.faces) > 0:
+                        slab_parts.append(s)
+                except Exception:
+                    pass
+
+            if not slab_parts:
                 continue
 
-            # Step 2: apply lens profile.
-            # Split the slab into individual bodies (e.g. separate letters),
-            # repair each body to watertight, then boolean-intersect with the
-            # lens cutter per body. This reliably handles the multi-body
-            # non-watertight slabs produced by slice_mesh_plane on complex logos.
+            # Apply lens profile per slab part
             if use_lens:
                 try:
                     cutter = _make_lens_cutter(
                         w_wide, w_narrow, mesh_z_min, mesh_z_max, big, ax, center
                     )
-                    bodies = slab.split()
                     lens_parts = []
-                    for body in bodies:
-                        _repair_mesh(body)
+                    for part in slab_parts:
                         try:
-                            sl = body.intersection(cutter, engine='manifold')
+                            sl = part.intersection(cutter, engine='manifold')
                             if sl is not None and len(sl.faces) > 0:
                                 lens_parts.append(sl)
                             else:
-                                lens_parts.append(body)
+                                lens_parts.append(part)
                         except Exception:
-                            lens_parts.append(body)
-                    if lens_parts:
-                        slab = trimesh.util.concatenate(lens_parts)
+                            lens_parts.append(part)
+                    slab_parts = lens_parts
                 except Exception:
-                    pass  # keep rectangular slab
+                    pass  # keep rectangular slab parts
+
+            slab = trimesh.util.concatenate(slab_parts) if len(slab_parts) > 1 else slab_parts[0]
 
             if numbering_on:
                 try:

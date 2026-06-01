@@ -1042,8 +1042,7 @@ void main(){
     float zRange = uZMax - uZMin;
     float zNorm  = zRange > 0.001 ? (vPos.z - uZMin) / zRange : 0.5; // 0=bottom, 1=top
     float tZ     = 2.0 * abs(zNorm - 0.5);          // 0 at mid-height, 1 at top/bot
-    float cosVal = cos(tZ * 3.14159 / 2.0);
-    float halfW  = (uWNarrow + (uWWide - uWNarrow) * cosVal * cosVal) * 0.5;
+    float halfW  = (uWWide - (uWWide - uWNarrow) * tZ * tZ) * 0.5;  // parabola
 
     // Distance of fragment from its slab centre along the slice axis (in model units)
     float slabCenter3d = uMin + (floor(t / pitch) + 0.5) * (uMax - uMin) / uSlices;
@@ -1563,8 +1562,7 @@ function updateLensDiagram() {
     const frac = i / nPts;
     const y = yPad + frac * (svgH - 2 * yPad);
     const t = (frac - 0.5) * 2;  // -1..1, 0 at center
-    const cosV = Math.cos(t * Math.PI / 2);
-    const hW = halfNPx + (halfWPx - halfNPx) * cosV * cosV;
+    const hW = halfWPx - (halfWPx - halfNPx) * t * t;  // parabola
     pts.push([cx + hW, y]);
   }
   // Left side (top to bottom)
@@ -1573,8 +1571,7 @@ function updateLensDiagram() {
     const frac = i / nPts;
     const y = yPad + frac * (svgH - 2 * yPad);
     const t = (frac - 0.5) * 2;
-    const cosV = Math.cos(t * Math.PI / 2);
-    const hW = halfNPx + (halfWPx - halfNPx) * cosV * cosV;
+    const hW = halfWPx - (halfWPx - halfNPx) * t * t;  // parabola
     ptsL.push([cx - hW, y]);
   }
 
