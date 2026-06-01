@@ -97,6 +97,56 @@ def _scale_mesh(mesh, scale_str):
     return mesh
 
 
+def _repair_mesh(mesh):
+    """Make a mesh watertight so the manifold boolean engine accepts it.
+
+    Real-world / downloaded STLs are almost never watertight; the manifold
+    engine then refuses them ("Not all meshes are volumes!") and every slab
+    intersection returns empty. We merge/clean and fill holes to recover a
+    closed solid wherever possible.
+    """
+    import trimesh
+    try:
+        mesh.merge_vertices()
+        mesh.update_faces(mesh.unique_faces())
+        mesh.update_faces(mesh.nondegenerate_faces())
+        mesh.remove_unreferenced_vertices()
+        if not mesh.is_watertight:
+            trimesh.repair.fill_holes(mesh)
+        trimesh.repair.fix_normals(mesh)
+        trimesh.repair.fix_winding(mesh)
+    except Exception:
+        pass
+    return mesh
+
+
+def _slab_box_fallback(mesh, ax, center, thickness):
+    """Extract a rectangular slab using plane cuts (works on open meshes).
+
+    Used when the manifold boolean fails (e.g. the input could not be made
+    fully watertight). Produces a plain box slab — no lens profile — so the
+    user still gets usable output instead of a missing slice.
+    """
+    import trimesh
+    import numpy as np
+    try:
+        lo = center - thickness / 2.0
+        hi = center + thickness / 2.0
+        n_lo = np.zeros(3); n_lo[ax] = 1.0
+        n_hi = np.zeros(3); n_hi[ax] = -1.0
+        o_lo = np.zeros(3); o_lo[ax] = lo
+        o_hi = np.zeros(3); o_hi[ax] = hi
+        m = trimesh.intersections.slice_mesh_plane(mesh, n_lo, o_lo, cap=True)
+        if m is None or len(m.faces) == 0:
+            return None
+        m = trimesh.intersections.slice_mesh_plane(m, n_hi, o_hi, cap=True)
+        if m is None or len(m.faces) == 0:
+            return None
+        return m
+    except Exception:
+        return None
+
+
 def _facade_cut(mesh, axis_idx, depth_ratio):
     """Cut mesh to keep only the front depth_ratio fraction along the depth axis."""
     try:
@@ -406,6 +456,9 @@ def api_slice():
         except Exception:
             pass
 
+        # Repair to a watertight solid so the manifold engine accepts it.
+        mesh = _repair_mesh(mesh)
+
         lo  = float(mesh.bounds[0][ax])
         hi  = float(mesh.bounds[1][ax])
         pitch     = (hi - lo) / slices_n
@@ -447,17 +500,27 @@ def api_slice():
                 t[ax, 3] = center
                 cutter = trimesh.creation.box(extents=extents, transform=t)
 
+            slab = None
             try:
                 slab = mesh.intersection(cutter, engine='manifold')
-                if slab is not None and len(slab.faces) > 0:
-                    if numbering_on:
-                        try:
-                            slab = _engrave_number(slab, i + 1, ax, num_size)
-                        except Exception:
-                            pass
-                    slabs.append(slab)
+                if slab is not None and len(slab.faces) == 0:
+                    slab = None
             except Exception:
-                continue
+                slab = None
+
+            # If the boolean failed (e.g. mesh still not a clean volume),
+            # fall back to a plane-sliced rectangular slab so the slice is
+            # not silently dropped.
+            if slab is None:
+                slab = _slab_box_fallback(mesh, ax, center, thickness)
+
+            if slab is not None and len(slab.faces) > 0:
+                if numbering_on:
+                    try:
+                        slab = _engrave_number(slab, i + 1, ax, num_size)
+                    except Exception:
+                        pass
+                slabs.append(slab)
 
         if not slabs:
             return jsonify(error='Не удалось нарезать модель'), 500
