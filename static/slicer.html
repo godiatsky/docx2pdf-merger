@@ -751,12 +751,19 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
     </div>
   </div>
 
-  <div id="baseThickRow" style="display:none" class="sl-group">
+  <div id="baseWidthRow" style="display:none" class="sl-group">
     <div class="sl-head">
-      <span class="sl-key">Base thickness</span>
-      <span class="sl-val" id="baseThickVal">3.0 mm</span>
+      <span class="sl-key">Base width</span>
+      <span class="sl-val" id="baseWidthVal">200 mm</span>
     </div>
-    <input type="range" id="baseThickSlider" min="1" max="10" step="0.5" value="3" oninput="onBaseThick(this.value)">
+    <input type="range" id="baseWidthSlider" min="10" max="500" step="1" value="200" oninput="onBaseSize()">
+  </div>
+  <div id="baseLengthRow" style="display:none" class="sl-group">
+    <div class="sl-head">
+      <span class="sl-key">Base length</span>
+      <span class="sl-val" id="baseLengthVal">200 mm</span>
+    </div>
+    <input type="range" id="baseLengthSlider" min="10" max="500" step="1" value="200" oninput="onBaseSize()">
   </div>
 
   <!-- Facade -->
@@ -1088,9 +1095,9 @@ let basePlateMesh = null;
 function updateBasePreview() {
   if (basePlateMesh) { scene.remove(basePlateMesh); basePlateMesh.geometry.dispose(); basePlateMesh = null; }
   if (!modelLocalBounds || window.baseMode !== 'with') return;
-  const bt = parseFloat(document.getElementById('baseThickSlider').value) || 3;
-  const bx = modelLocalBounds.max.x - modelLocalBounds.min.x + 4;
-  const by = modelLocalBounds.max.y - modelLocalBounds.min.y + 4;
+  const bt = 1;
+  const bx = parseFloat(document.getElementById('baseWidthSlider').value) || 200;
+  const by = parseFloat(document.getElementById('baseLengthSlider').value) || 200;
   const geo = new THREE.BoxGeometry(bx, by, bt);
   const mat2 = new THREE.MeshStandardMaterial({ color: 0xc8a45a, roughness: 0.5, metalness: 0.1, transparent: true, opacity: 0.65 });
   basePlateMesh = new THREE.Mesh(geo, mat2);
@@ -1194,6 +1201,18 @@ function loadSTL(file) {
 
     modelLocalBounds = geo.boundingBox.clone();
     const sz = modelLocalBounds.getSize(new THREE.Vector3());
+
+    // Auto-set base size defaults from model bounds (model + 20mm border)
+    const autoW = Math.round(sz.x + 20);
+    const autoL = Math.round(sz.y + 20);
+    const wSlider = document.getElementById('baseWidthSlider');
+    const lSlider = document.getElementById('baseLengthSlider');
+    wSlider.max = Math.max(500, autoW * 2);
+    lSlider.max = Math.max(500, autoL * 2);
+    wSlider.value = autoW;
+    lSlider.value = autoL;
+    document.getElementById('baseWidthVal').textContent = autoW + ' mm';
+    document.getElementById('baseLengthVal').textContent = autoL + ' mm';
 
     const axIdx = {X:0,Y:1,Z:2}[currentAxis];
     mat = makeMat(
@@ -1585,12 +1604,16 @@ function setBase(mode) {
   baseMode = window.baseMode = mode;
   document.getElementById('baseNoneBtn').classList.toggle('on', mode === 'none');
   document.getElementById('baseWithBtn').classList.toggle('on', mode === 'with');
-  document.getElementById('baseThickRow').style.display = mode === 'with' ? '' : 'none';
+  document.getElementById('baseWidthRow').style.display = mode === 'with' ? '' : 'none';
+  document.getElementById('baseLengthRow').style.display = mode === 'with' ? '' : 'none';
   if (window._updateBasePreview) window._updateBasePreview();
 }
 
-function onBaseThick(val) {
-  document.getElementById('baseThickVal').textContent = parseFloat(val).toFixed(1) + ' mm';
+function onBaseSize() {
+  const w = Math.round(parseFloat(document.getElementById('baseWidthSlider').value));
+  const l = Math.round(parseFloat(document.getElementById('baseLengthSlider').value));
+  document.getElementById('baseWidthVal').textContent = w + ' mm';
+  document.getElementById('baseLengthVal').textContent = l + ' mm';
   if (window._updateBasePreview) window._updateBasePreview();
 }
 
@@ -1635,7 +1658,8 @@ async function generate() {
   const wNarrow = parseFloat(document.getElementById('wNarrowNum').value) || 0;
   const numbering = document.getElementById('numberingToggle').checked;
   const numSize = parseFloat(document.getElementById('numSizeSlider').value) || 5;
-  const baseThick = parseFloat(document.getElementById('baseThickSlider').value) || 3;
+  const baseWidth  = Math.round(parseFloat(document.getElementById('baseWidthSlider').value))  || 200;
+  const baseLength = Math.round(parseFloat(document.getElementById('baseLengthSlider').value)) || 200;
 
   const fd = new FormData();
   fd.append('file',            f);
@@ -1644,7 +1668,8 @@ async function generate() {
   fd.append('axis',            currentAxis);
   fd.append('scale',           scale);
   fd.append('base',            baseMode);
-  fd.append('base_thickness',  baseThick);
+  fd.append('base_width',      baseWidth);
+  fd.append('base_length',     baseLength);
   fd.append('facade',          facadeOn ? 'true' : 'false');
   fd.append('facade_depth',    facadeDepth);
   fd.append('w_wide',          wWide);

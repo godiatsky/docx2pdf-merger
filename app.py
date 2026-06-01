@@ -248,8 +248,11 @@ def _make_lens_cutter(w_wide, w_narrow, mesh_z_min, mesh_z_max, big, ax, center)
         return trimesh.creation.box(extents=extents, transform=t)
 
 
-def _make_base_plate(slabs_combined, base_thickness):
-    """Create a horizontal flat box at the bottom of sliced mesh."""
+def _make_base_plate(slabs_combined, base_width=0, base_length=0):
+    """Create a 1mm-thick flat box at the bottom of sliced mesh.
+
+    base_width / base_length: explicit mm values; 0 means auto (model bounds + border).
+    """
     import trimesh
     import numpy as np
 
@@ -258,10 +261,10 @@ def _make_base_plate(slabs_combined, base_thickness):
         x_min, y_min, z_min = bounds[0]
         x_max, y_max, z_max = bounds[1]
 
-        border = 2.0
-        width  = (x_max - x_min) + 2 * border
-        depth  = (y_max - y_min) + 2 * border
-        height = base_thickness
+        border = 10.0
+        width  = float(base_width)  if base_width  > 0 else (x_max - x_min) + 2 * border
+        depth  = float(base_length) if base_length > 0 else (y_max - y_min) + 2 * border
+        height = 1.0  # fixed 1 mm
 
         cx = (x_min + x_max) / 2.0
         cy = (y_min + y_max) / 2.0
@@ -383,7 +386,8 @@ def api_slice():
     # New parameters
     scale_str      = request.form.get('scale', '').strip()
     base_mode      = request.form.get('base', 'none').strip().lower()  # 'with' or 'none'
-    base_thickness = float(request.form.get('base_thickness', 3.0))
+    base_width     = float(request.form.get('base_width',  0))
+    base_length    = float(request.form.get('base_length', 0))
     facade_on      = request.form.get('facade', 'false').lower() == 'true'
     facade_depth   = max(0.1, min(1.0, float(request.form.get('facade_depth', 0.5))))
     w_wide_raw     = float(request.form.get('w_wide', 0))
@@ -514,7 +518,7 @@ def api_slice():
         # Add base plate
         if base_mode == 'with':
             try:
-                base = _make_base_plate(combined, base_thickness)
+                base = _make_base_plate(combined, base_width, base_length)
                 if base is not None:
                     combined = trimesh.util.concatenate([combined, base])
             except Exception:
