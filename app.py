@@ -435,13 +435,8 @@ def api_slice():
         except Exception:
             pass
 
-        # Repair whole mesh then split into individual watertight bodies.
-        # This is the rtree-free path: box intersections via manifold engine,
-        # no slice_mesh_plane(cap=True) which requires rtree.
+        # Light repair so normals/winding are consistent; no split needed.
         _repair_mesh(mesh)
-        bodies = [b for b in mesh.split() if len(b.faces) > 0]
-        for b in bodies:
-            _repair_mesh(b)
 
         lo  = float(mesh.bounds[0][ax])
         hi  = float(mesh.bounds[1][ax])
@@ -465,51 +460,39 @@ def api_slice():
             w_wide   = min(w_wide, thickness * 0.99)
             w_narrow = min(w_narrow, w_wide)
 
+        # Normal vector for the slice axis
+        n_vec = np.zeros(3); n_vec[ax] = 1.0
+
         slabs = []
         for i in range(slices_n):
-            center = lo + pitch * (i + (1.0 - gap) / 2.0)
+            center    = lo + pitch * (i + (1.0 - gap) / 2.0)
+            slab_lo   = center - thickness / 2.0
+            slab_hi   = center + thickness / 2.0
 
-            # Build a box cutter for this slab
-            box_extents = [big, big, big]
-            box_extents[ax] = thickness
-            T_box = np.eye(4)
-            T_box[ax, 3] = center
-            box_cutter = trimesh.creation.box(extents=box_extents, transform=T_box)
-
-            # Intersect each body with the slab box
-            slab_parts = []
-            for body in bodies:
-                try:
-                    s = body.intersection(box_cutter, engine='manifold')
-                    if s is not None and len(s.faces) > 0:
-                        slab_parts.append(s)
-                except Exception:
-                    pass
-
-            if not slab_parts:
+            # Primary: slice_mesh_plane two-cut (works on any topology).
+            try:
+                pt_lo = n_vec * slab_lo
+                pt_hi = n_vec * slab_hi
+                slab = trimesh.intersections.slice_mesh_plane(mesh,  n_vec, pt_lo, cap=True)
+                if slab is None or len(slab.faces) == 0:
+                    continue
+                slab = trimesh.intersections.slice_mesh_plane(slab, -n_vec, pt_hi, cap=True)
+                if slab is None or len(slab.faces) == 0:
+                    continue
+            except Exception:
                 continue
 
-            # Apply lens profile per slab part
+            # Apply lens profile: slab is now capped → manifold succeeds.
             if use_lens:
                 try:
                     cutter = _make_lens_cutter(
                         w_wide, w_narrow, mesh_z_min, mesh_z_max, big, ax, center
                     )
-                    lens_parts = []
-                    for part in slab_parts:
-                        try:
-                            sl = part.intersection(cutter, engine='manifold')
-                            if sl is not None and len(sl.faces) > 0:
-                                lens_parts.append(sl)
-                            else:
-                                lens_parts.append(part)
-                        except Exception:
-                            lens_parts.append(part)
-                    slab_parts = lens_parts
+                    sl = slab.intersection(cutter, engine='manifold')
+                    if sl is not None and len(sl.faces) > 0:
+                        slab = sl
                 except Exception:
-                    pass  # keep rectangular slab parts
-
-            slab = trimesh.util.concatenate(slab_parts) if len(slab_parts) > 1 else slab_parts[0]
+                    pass  # keep rectangular slab
 
             if numbering_on:
                 try:
