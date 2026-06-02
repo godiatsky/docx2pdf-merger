@@ -463,23 +463,41 @@ def api_slice():
         # Normal vector for the slice axis
         n_vec = np.zeros(3); n_vec[ax] = 1.0
 
+        def _cut_slab(src_mesh, ax_vec, lo_pt, hi_pt):
+            """Return mesh slab [lo, hi] along ax_vec using two half-space cuts.
+
+            Tries three strategies in order until one produces non-empty geometry:
+              1. cap=True on both cuts   → closed slab faces
+              2. cap=False first + cap=True second → open on lo side
+              3. cap=False on both cuts  → open shell (still printable)
+            """
+            strategies = [
+                (True,  True),
+                (False, True),
+                (False, False),
+            ]
+            for cap1, cap2 in strategies:
+                try:
+                    s1 = trimesh.intersections.slice_mesh_plane(
+                        src_mesh, ax_vec, lo_pt, cap=cap1)
+                    if s1 is None or len(s1.faces) == 0:
+                        continue
+                    s2 = trimesh.intersections.slice_mesh_plane(
+                        s1, -ax_vec, hi_pt, cap=cap2)
+                    if s2 is not None and len(s2.faces) > 0:
+                        return s2
+                except Exception:
+                    continue
+            return None
+
         slabs = []
         for i in range(slices_n):
             center    = lo + pitch * (i + (1.0 - gap) / 2.0)
             slab_lo   = center - thickness / 2.0
             slab_hi   = center + thickness / 2.0
 
-            # Primary: slice_mesh_plane two-cut (works on any topology).
-            try:
-                pt_lo = n_vec * slab_lo
-                pt_hi = n_vec * slab_hi
-                slab = trimesh.intersections.slice_mesh_plane(mesh,  n_vec, pt_lo, cap=True)
-                if slab is None or len(slab.faces) == 0:
-                    continue
-                slab = trimesh.intersections.slice_mesh_plane(slab, -n_vec, pt_hi, cap=True)
-                if slab is None or len(slab.faces) == 0:
-                    continue
-            except Exception:
+            slab = _cut_slab(mesh, n_vec, n_vec * slab_lo, n_vec * slab_hi)
+            if slab is None:
                 continue
 
             # Apply lens profile: slab is now capped → manifold succeeds.
