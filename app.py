@@ -156,96 +156,64 @@ def _facade_cut(mesh, axis_idx, depth_ratio):
     return mesh
 
 
-def _make_lens_cutter(w_wide, w_narrow, mesh_z_min, mesh_z_max, big, ax, center):
-    """Create a lens/leaf shaped cutting tool along the given axis.
+def _make_lens_side_neg(w_wide, w_narrow, z_lo, z_hi, big, ax, slab_center, slab_thick, side):
+    """Parabolic lens-shaped negative modifier for one side of one slab.
 
-    The lens narrows from w_wide (at mid model height) to w_narrow (at top/bottom).
-    mesh_z_min/mesh_z_max are the actual world-Z bounds of the model.
+    side: -1 = left (negative width-axis), +1 = right (positive width-axis)
+    ax:   0=X or 1=Y slice axis; lens is not applied for ax=2
+    z_lo/z_hi: Z bounds of the component this modifier belongs to
     """
-    import trimesh
-    import numpy as np
-
     try:
-        from shapely.geometry import Polygon
-
-        z_center = (mesh_z_min + mesh_z_max) / 2.0
-        z_half = (mesh_z_max - mesh_z_min) / 2.0
-
-        if z_half <= 0 or w_wide <= 0:
-            raise ValueError("Invalid dimensions")
-
-        # Build profile: (width, world_z) pairs spanning full model height
-        n_pts = 48
-        zs = np.linspace(mesh_z_min, mesh_z_max, n_pts)
-        ws = []
-        for z in zs:
-            # Parabolic profile: wide at center, narrow at top/bottom
-            t = abs(z - z_center) / z_half  # 0=center, 1=edge
-            t = min(1.0, t)
-            w = w_wide - (w_wide - w_narrow) * t * t
-            ws.append(w)
-
-        # Build 2D polygon in (ax_coord, Z) plane
-        # Right side: z from bottom to top at +w/2
-        # Left side: z from top to bottom at -w/2
-        right = [(ws[i] / 2.0, zs[i]) for i in range(n_pts)]
-        left  = [(-ws[i] / 2.0, zs[i]) for i in range(n_pts - 1, -1, -1)]
-        coords = right + left
-        poly = Polygon(coords)
-        if not poly.is_valid:
-            poly = poly.buffer(0)
-
-        # Extrude along the "big" direction (the third axis)
-        extruded = trimesh.creation.extrude_polygon(poly, big)
-
-        # Now apply transform to map local→world axes
-        # extruded local: X=ax_coord (col 0), Y=Z_world (col 1), Z=extrusion (col 2)
-        # We need to re-map so the extrusion is centred
-        T = np.eye(4)
-
-        if ax == 0:
-            # slice axis X: lens profile in (X, Z_world) plane, extrude along Y
-            # local X → world X, local Y → world Z, local Z → world Y
-            T = np.array([
-                [1, 0, 0, 0],
-                [0, 0, 1, -big/2],
-                [0, 1, 0, 0],
-                [0, 0, 0, 1],
-            ], dtype=float)
-        elif ax == 1:
-            # slice axis Y: lens profile in (Y, Z_world) plane, extrude along X
-            # local X → world Y, local Y → world Z, local Z → world X
-            T = np.array([
-                [0, 0, 1, -big/2],
-                [1, 0, 0, 0],
-                [0, 1, 0, 0],
-                [0, 0, 0, 1],
-            ], dtype=float)
-        else:
-            # ax == 2: just use rectangular box (lens in XY plane is complex)
-            raise ValueError("Use box for Z axis")
-
-        extruded.apply_transform(T)
-
-        # Centre the cutter on the slab centre
-        bounds = extruded.bounds
-        shift = np.zeros(3)
-        shift[ax] = center - (bounds[0][ax] + bounds[1][ax]) / 2.0
-        T2 = np.eye(4)
-        T2[:3, 3] = shift
-        extruded.apply_transform(T2)
-
-        return extruded
-
-    except Exception:
-        # Fall back to rectangular box
         import trimesh
         import numpy as np
-        extents = [big, big, big]
-        extents[ax] = w_wide
-        t = np.eye(4)
-        t[ax, 3] = center
-        return trimesh.creation.box(extents=extents, transform=t)
+        from shapely.geometry import Polygon as SPoly
+
+        if ax not in (0, 1):
+            return None
+        z_half = (z_hi - z_lo) / 2.0
+        if z_half <= 0 or w_wide <= 0:
+            return None
+        z_ctr = (z_lo + z_hi) / 2.0
+
+        zs = np.linspace(z_lo, z_hi, 40)
+        ws = [max(w_wide - (w_wide - w_narrow) * min(1.0, abs(z - z_ctr) / z_half) ** 2, 0.1)
+              for z in zs]
+
+        # Polygon in (u, v): u = width axis, v = world Z
+        # For each side: the region outside the lens edge to the far boundary (±big/2)
+        far = big / 2.0
+        sgn = -1 if side < 0 else 1
+        lens_pts = [(sgn * ws[i] / 2.0, zs[i]) for i in range(len(zs))]
+        pts = lens_pts + [(sgn * far, z_hi), (sgn * far, z_lo)]
+
+        poly = SPoly(pts)
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        if poly.is_empty or poly.area < 1e-6:
+            return None
+
+        h = slab_thick + 0.2
+        extruded = trimesh.creation.extrude_polygon(poly, h)
+
+        # Map local axes → world:
+        #   local u (polygon x) → world width-axis  (X=0 if ax=1, Y=1 if ax=0)
+        #   local v (polygon y) → world Z
+        #   local z_ext         → world slice-axis, centred at slab_center
+        shift = slab_center - h / 2.0
+        if ax == 1:   # Y-slicing: width=X, extrude along Y
+            T = np.array([[1, 0, 0, 0],
+                          [0, 0, 1, shift],
+                          [0, 1, 0, 0],
+                          [0, 0, 0, 1]], dtype=float)
+        else:         # X-slicing: width=Y, extrude along X
+            T = np.array([[0, 0, 1, shift],
+                          [1, 0, 0, 0],
+                          [0, 1, 0, 0],
+                          [0, 0, 0, 1]], dtype=float)
+        extruded.apply_transform(T)
+        return extruded
+    except Exception:
+        return None
 
 
 def _make_base_plate(slabs_combined, base_width=0, base_length=0, mesh_bounds=None):
@@ -501,29 +469,27 @@ def api_slice():
             box.apply_translation(center_pt)
             gap_boxes.append(box)
 
-        # Lens modifiers: two side-trimming boxes per slab
+        # Lens modifiers: per-component parabolic side trimmers
+        # Split mesh into disconnected components (e.g. individual letters) so each
+        # component uses its own Z range for the lens profile — prevents small components
+        # from losing their fins at top/bottom due to global Z scaling.
         if use_lens:
-            for i in range(slices_n):
-                center = lo + pitch * (i + (1.0 - gap) / 2.0)
-                try:
-                    cutter = _make_lens_cutter(
-                        w_wide, w_narrow, mesh_z_min, mesh_z_max, big, ax, center
-                    )
-                    # The cutter is the region to KEEP; negate = region to REMOVE.
-                    # We approximate this as two half-space boxes flanking the lens.
-                    # Left side: from -big to lens left edge (approx -w_wide/2)
-                    for sign, edge in [(-1, -w_wide / 2.0), (1, w_wide / 2.0)]:
-                        box_ext = np.zeros(3); box_ext[ax] = thickness + 0.1
-                        box_ext[a1] = big; box_ext[a2] = big
-                        box_c = np.zeros(3)
-                        box_c[ax] = center
-                        box_c[a1] = cx + sign * (edge + big / 2.0)
-                        box_c[a2] = cz
-                        b = trimesh.creation.box(extents=box_ext)
-                        b.apply_translation(box_c)
-                        gap_boxes.append(b)
-                except Exception:
-                    pass
+            components = mesh.split(only_watertight=False)
+            if not components or len(components) > 50:
+                components = [mesh]
+            for comp in components:
+                cz_lo = float(comp.bounds[0][2])
+                cz_hi = float(comp.bounds[1][2])
+                for i in range(slices_n):
+                    center = lo + pitch * (i + (1.0 - gap) / 2.0)
+                    t_i = slab_hi_list[i] - slab_lo_list[i]
+                    for side in (-1, 1):
+                        neg = _make_lens_side_neg(
+                            w_wide, w_narrow, cz_lo, cz_hi,
+                            big, ax, center, t_i, side
+                        )
+                        if neg is not None:
+                            gap_boxes.append(neg)
 
         # ─── Export Bambu 3MF with negative_part modifiers ──────────────────────
         import zipfile, uuid as _uuid
