@@ -509,21 +509,66 @@ def api_slice():
                 return None
             return trimesh.Trimesh(vertices=np.array(verts), faces=np.array(faces))
 
+        def _close_open_loops(mesh):
+            """Fan-triangulate any remaining boundary loops to make mesh watertight."""
+            if mesh.is_watertight:
+                return mesh
+            edges = mesh.edges_sorted
+            unique, counts = np.unique(edges, axis=0, return_counts=True)
+            naked = unique[counts == 1]
+            if len(naked) == 0:
+                return mesh
+            from collections import defaultdict
+            adj = defaultdict(list)
+            for e in naked:
+                adj[e[0]].append(e[1])
+                adj[e[1]].append(e[0])
+            visited = set()
+            loops = []
+            for start in sorted(adj.keys()):
+                if start in visited:
+                    continue
+                loop = [start]; visited.add(start); cur = start
+                while True:
+                    nxt_list = [n for n in adj[cur] if n not in visited]
+                    if not nxt_list:
+                        break
+                    nxt = nxt_list[0]; loop.append(nxt); visited.add(nxt); cur = nxt
+                if len(loop) >= 3:
+                    loops.append(loop)
+            if not loops:
+                return mesh
+            new_verts = list(mesh.vertices)
+            new_faces = list(mesh.faces)
+            for loop in loops:
+                pts = mesh.vertices[loop]
+                center = pts.mean(0)
+                cid = len(new_verts)
+                new_verts.append(center)
+                for j in range(len(loop)):
+                    new_faces.append([loop[j], loop[(j + 1) % len(loop)], cid])
+            result = trimesh.Trimesh(
+                vertices=np.array(new_verts), faces=np.array(new_faces))
+            trimesh.repair.fix_normals(result)
+            result.merge_vertices()
+            return result
+
         def _cut_slab(src_mesh, ax_vec, slab_lo, slab_hi):
             """Return solid slab mesh in [slab_lo, slab_hi] along ax_vec.
 
             Strategy 1: cap=True on both cuts → watertight slab (best).
-            Fallback: cap=False surface + grid caps from pre-cast rays → solid.
+            Strategy 2: cap=True + fan-close any remaining boundary loops.
+            Fallback: cap=False surface + ray-grid caps.
             """
             lo_pt = ax_vec * slab_lo
             hi_pt = ax_vec * slab_hi
-            # Strategy 1: fully capped (works on watertight / simple meshes)
+            # Strategy 1+2: fully capped, then fan-close any residual open edges
             try:
                 s1 = trimesh.intersections.slice_mesh_plane(src_mesh, ax_vec, lo_pt, cap=True)
                 if s1 is not None and len(s1.faces) > 0:
                     s2 = trimesh.intersections.slice_mesh_plane(s1, -ax_vec, hi_pt, cap=True)
                     if s2 is not None and len(s2.faces) > 0:
-                        return s2
+                        return _close_open_loops(s2)
             except Exception:
                 pass
             # Fallback: open surface + ray-grid caps
@@ -536,7 +581,8 @@ def api_slice():
                     return None
                 caps = [_grid_cap(slab_lo), _grid_cap(slab_hi)]
                 parts = [s2] + [c for c in caps if c is not None]
-                return trimesh.util.concatenate(parts) if len(parts) > 1 else parts[0]
+                combined = trimesh.util.concatenate(parts) if len(parts) > 1 else parts[0]
+                return _close_open_loops(combined)
             except Exception:
                 return None
 
