@@ -574,6 +574,13 @@ def api_slice():
 
         combined = trimesh.util.concatenate(slabs)
 
+        # Remove degenerate artifact components (< 20 faces) and fix normals.
+        parts = [c for c in combined.split(only_watertight=False) if len(c.faces) >= 20]
+        if parts:
+            for p in parts:
+                trimesh.repair.fix_normals(p)
+            combined = trimesh.util.concatenate(parts)
+
         # Add base plate
         if base_mode == 'with':
             try:
