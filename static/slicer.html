@@ -1040,8 +1040,10 @@ void main(){
   float t = clamp((p-uMin)/(uMax-uMin),0.,1.);
   float pitch = 1./uSlices;
   float within = mod(t,pitch)/pitch;
-  float slabFrac = 1.-uGap;
-  bool inSlab = within < slabFrac;
+  // Each slab is centred within its pitch interval: equal half-gap at both
+  // model edges so the first and last slab look identical (no cutoff/overflow).
+  // Matches Python export which uses center = lo + (i+0.5)*pitch.
+  bool inSlab = within > uGap * 0.5 && within < (1.0 - uGap * 0.5);
 
   // Lens profile: width varies with world-Z height (wide at centre, narrow at top/bottom)
   bool isInsideLens = true;
