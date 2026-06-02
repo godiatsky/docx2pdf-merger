@@ -460,139 +460,153 @@ def api_slice():
             w_wide   = min(w_wide, thickness * 0.99)
             w_narrow = min(w_narrow, w_wide)
 
-        # Normal vector for the slice axis
-        n_vec = np.zeros(3); n_vec[ax] = 1.0
+        # Modifier approach: keep original mesh intact, subtract gap boxes.
+        # The slicer (Bambu Studio) handles solid infill — no mesh cutting needed,
+        # so non-watertight source models always produce solid fins.
 
-        # Pre-cast rays for grid-based cap generation (used when cap=True fails).
-        # Single cast covers all 17 slab boundaries via binary search.
-        _cap_ray_data = None
-        try:
-            other_ax = [i for i in range(3) if i != ax]
-            a1, a2 = other_ax
-            g1 = np.arange(mesh.bounds[0][a1], mesh.bounds[1][a1] + 3.0, 3.0)
-            g2 = np.arange(mesh.bounds[0][a2], mesh.bounds[1][a2] + 3.0, 3.0)
-            if len(g1) >= 2 and len(g2) >= 2:
-                G1, G2 = np.meshgrid(g1, g2)
-                n_rays = G1.size
-                ray_pts = np.zeros((n_rays, 3))
-                ray_pts[:, a1] = G1.ravel(); ray_pts[:, a2] = G2.ravel()
-                ray_pts[:, ax] = float(mesh.bounds[0][ax]) - 1.0
-                ray_dirs = np.zeros((n_rays, 3)); ray_dirs[:, ax] = 1.0
-                rlocs, ridx, _ = mesh.ray.intersects_location(
-                    ray_pts, ray_dirs, multiple_hits=True)
-                if len(rlocs) > 0:
-                    order = np.argsort(rlocs[:, ax])
-                    _cap_ray_data = (g1, g2, G1.shape, n_rays,
-                                     rlocs[order, ax], ridx[order])
-        except Exception:
-            pass
+        other_ax = [i for i in range(3) if i != ax]
+        a1, a2 = other_ax
 
-        def _grid_cap(plane_pos):
-            """Create a flat cap mesh at plane_pos using pre-cast ray data."""
-            if _cap_ray_data is None:
-                return None
-            g1, g2, gshape, n_rays, locs_ax, idx_sorted = _cap_ray_data
-            below = np.searchsorted(locs_ax, plane_pos)
-            cnt = np.bincount(idx_sorted[:below], minlength=n_rays) if below > 0 else np.zeros(n_rays, int)
-            inside = (cnt % 2 == 1).reshape(gshape)
-            verts, faces = [], []
-            for r in range(gshape[0] - 1):
-                for c in range(gshape[1] - 1):
-                    if inside[r, c] or inside[r+1, c] or inside[r, c+1] or inside[r+1, c+1]:
-                        bi = len(verts)
-                        def _v(ri, ci):
-                            v = np.zeros(3); v[a1] = g1[ci]; v[a2] = g2[ri]; v[ax] = plane_pos
-                            return v
-                        verts.extend([_v(r,c), _v(r,c+1), _v(r+1,c), _v(r+1,c+1)])
-                        faces += [[bi, bi+1, bi+2], [bi+1, bi+3, bi+2]]
-            if not faces:
-                return None
-            return trimesh.Trimesh(vertices=np.array(verts), faces=np.array(faces))
-
-        def _cut_slab(src_mesh, ax_vec, slab_lo, slab_hi):
-            """Return solid slab mesh in [slab_lo, slab_hi] along ax_vec.
-
-            Strategy 1: cap=True on both cuts → watertight slab (best).
-            Fallback: cap=False surface + ray-grid caps at slab boundaries.
-            """
-            lo_pt = ax_vec * slab_lo
-            hi_pt = ax_vec * slab_hi
-            # Strategy 1: fully capped
-            try:
-                s1 = trimesh.intersections.slice_mesh_plane(src_mesh, ax_vec, lo_pt, cap=True)
-                if s1 is not None and len(s1.faces) > 0:
-                    s2 = trimesh.intersections.slice_mesh_plane(s1, -ax_vec, hi_pt, cap=True)
-                    if s2 is not None and len(s2.faces) > 0:
-                        return s2
-            except Exception:
-                pass
-            # Fallback: open surface + ray-grid caps
-            try:
-                s1 = trimesh.intersections.slice_mesh_plane(src_mesh, ax_vec, lo_pt, cap=False)
-                if s1 is None or len(s1.faces) == 0:
-                    return None
-                s2 = trimesh.intersections.slice_mesh_plane(s1, -ax_vec, hi_pt, cap=False)
-                if s2 is None or len(s2.faces) == 0:
-                    return None
-                caps = [_grid_cap(slab_lo), _grid_cap(slab_hi)]
-                parts = [s2] + [c for c in caps if c is not None]
-                return trimesh.util.concatenate(parts) if len(parts) > 1 else parts[0]
-            except Exception:
-                return None
-
-        slabs = []
+        # Compute slab boundary positions
+        slab_lo_list, slab_hi_list = [], []
         for i in range(slices_n):
-            center    = lo + pitch * (i + (1.0 - gap) / 2.0)
-            slab_lo   = center - thickness / 2.0
-            slab_hi   = center + thickness / 2.0
+            center = lo + pitch * (i + (1.0 - gap) / 2.0)
+            slab_lo_list.append(center - thickness / 2.0)
+            slab_hi_list.append(center + thickness / 2.0)
 
-            slab = _cut_slab(mesh, n_vec, slab_lo, slab_hi)
-            if slab is None:
+        # Gap ranges: before first slab, between slabs, after last slab
+        gap_ranges = [(lo - big, slab_lo_list[0])]
+        for i in range(slices_n - 1):
+            gap_ranges.append((slab_hi_list[i], slab_lo_list[i + 1]))
+        gap_ranges.append((slab_hi_list[-1], hi + big))
+
+        # Build gap box meshes (big in the two non-slice axes)
+        cx = (mesh.bounds[0][a1] + mesh.bounds[1][a1]) / 2.0
+        cz = (mesh.bounds[0][a2] + mesh.bounds[1][a2]) / 2.0
+        gap_boxes = []
+        for g_lo, g_hi in gap_ranges:
+            sz = g_hi - g_lo
+            if sz <= 0:
                 continue
+            center_pt = np.zeros(3)
+            center_pt[ax] = (g_lo + g_hi) / 2.0
+            center_pt[a1] = cx
+            center_pt[a2] = cz
+            extents = np.zeros(3)
+            extents[ax] = sz
+            extents[a1] = big * 2
+            extents[a2] = big * 2
+            box = trimesh.creation.box(extents=extents)
+            box.apply_translation(center_pt)
+            gap_boxes.append(box)
 
-            # Apply lens profile: slab is now capped → manifold succeeds.
-            if use_lens:
+        # Lens modifiers: two side-trimming boxes per slab
+        if use_lens:
+            for i in range(slices_n):
+                center = lo + pitch * (i + (1.0 - gap) / 2.0)
                 try:
                     cutter = _make_lens_cutter(
                         w_wide, w_narrow, mesh_z_min, mesh_z_max, big, ax, center
                     )
-                    sl = slab.intersection(cutter, engine='manifold')
-                    if sl is not None and len(sl.faces) > 0:
-                        slab = sl
-                except Exception:
-                    pass  # keep rectangular slab
-
-            if numbering_on:
-                try:
-                    slab = _engrave_number(slab, i + 1, ax, num_size)
+                    # The cutter is the region to KEEP; negate = region to REMOVE.
+                    # We approximate this as two half-space boxes flanking the lens.
+                    # Left side: from -big to lens left edge (approx -w_wide/2)
+                    for sign, edge in [(-1, -w_wide / 2.0), (1, w_wide / 2.0)]:
+                        box_ext = np.zeros(3); box_ext[ax] = thickness + 0.1
+                        box_ext[a1] = big; box_ext[a2] = big
+                        box_c = np.zeros(3)
+                        box_c[ax] = center
+                        box_c[a1] = cx + sign * (edge + big / 2.0)
+                        box_c[a2] = cz
+                        b = trimesh.creation.box(extents=box_ext)
+                        b.apply_translation(box_c)
+                        gap_boxes.append(b)
                 except Exception:
                     pass
-            slabs.append(slab)
 
-        if not slabs:
-            return jsonify(error='Не удалось нарезать модель'), 500
+        # Export as Bambu Studio 3MF with negative_volume modifiers
+        import zipfile
+        from lxml import etree
 
-        # Build 3MF scene: each slab component as a separate named object.
-        scene = trimesh.Scene()
-        obj_idx = 0
-        for slab_idx, slab in enumerate(slabs):
-            for comp in slab.split(only_watertight=False):
-                if len(comp.faces) < 20:
-                    continue
-                trimesh.repair.fix_normals(comp)
-                obj_idx += 1
-                scene.add_geometry(comp, geom_name=f'slab_{obj_idx:02d}')
+        ns = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 
-        # Add base plate
+        def _write_mesh(parent, obj_id, tmesh, name):
+            obj_el = etree.SubElement(parent, 'object',
+                                      id=str(obj_id), type='model', name=name)
+            m_el = etree.SubElement(obj_el, 'mesh')
+            v_el = etree.SubElement(m_el, 'vertices')
+            for v in tmesh.vertices:
+                etree.SubElement(v_el, 'vertex',
+                                 x=f'{v[0]:.5f}', y=f'{v[1]:.5f}', z=f'{v[2]:.5f}')
+            t_el = etree.SubElement(m_el, 'triangles')
+            for face in tmesh.faces:
+                etree.SubElement(t_el, 'triangle',
+                                 v1=str(face[0]), v2=str(face[1]), v3=str(face[2]))
+
+        model_name = os.path.splitext(secure_filename(f.filename or 'model'))[0]
+        root = etree.Element('model', nsmap={None: ns}, unit='millimeter')
+        resources = etree.SubElement(root, 'resources')
+
+        _write_mesh(resources, 1, mesh, model_name)
+        for gi, gb in enumerate(gap_boxes):
+            _write_mesh(resources, 2 + gi, gb, f'gap_{gi + 1:02d}')
+
+        n_parts = 1 + len(gap_boxes)
+        asm_id = n_parts + 1
+        asm = etree.SubElement(resources, 'object',
+                               id=str(asm_id), type='model', name=model_name)
+        comps = etree.SubElement(asm, 'components')
+        for oid in range(1, n_parts + 1):
+            etree.SubElement(comps, 'component', objectid=str(oid))
+
+        build = etree.SubElement(root, 'build')
+        etree.SubElement(build, 'item', objectid=str(asm_id))
+
+        # Base plate as separate build item (not affected by gap modifiers)
         if base_mode == 'with':
             try:
-                base_plate = _make_base_plate(None, base_width, base_length, mesh.bounds)
-                if base_plate is not None:
-                    scene.add_geometry(base_plate, geom_name='base')
+                bp = _make_base_plate(None, base_width, base_length, mesh.bounds)
+                if bp is not None:
+                    bp_id = asm_id + 1
+                    _write_mesh(resources, bp_id, bp, 'base')
+                    etree.SubElement(build, 'item', objectid=str(bp_id))
             except Exception:
                 pass
 
-        out_bytes = scene.export(file_type='3mf')
+        model_xml = etree.tostring(root, xml_declaration=True,
+                                   encoding='utf-8', pretty_print=True)
+
+        # Bambu model_settings.config: mark gap boxes as negative_volume
+        cfg = etree.Element('config')
+        obj_el = etree.SubElement(cfg, 'object', id=str(asm_id))
+        p = etree.SubElement(obj_el, 'part', id='1', subtype='normal_part')
+        etree.SubElement(p, 'metadata', key='name', value=model_name)
+        for gi in range(len(gap_boxes)):
+            p = etree.SubElement(obj_el, 'part',
+                                 id=str(2 + gi), subtype='negative_volume')
+            etree.SubElement(p, 'metadata', key='name', value=f'gap_{gi + 1:02d}')
+        config_xml = etree.tostring(cfg, xml_declaration=True,
+                                    encoding='utf-8', pretty_print=True)
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr('[Content_Types].xml',
+                        '<?xml version="1.0" encoding="utf-8"?>'
+                        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                        '<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>'
+                        '<Default Extension="config" ContentType="application/xml"/>'
+                        '</Types>')
+            zf.writestr('_rels/.rels',
+                        '<?xml version="1.0" encoding="utf-8"?>'
+                        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                        '<Relationship Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"'
+                        ' Target="/3D/3dmodel.model" Id="rel0"/>'
+                        '</Relationships>')
+            zf.writestr('3D/3dmodel.model', model_xml)
+            zf.writestr('Metadata/model_settings.config', config_xml)
+
+        out_bytes = buf.getvalue()
 
     stem  = os.path.splitext(secure_filename(f.filename or 'model'))[0]
     dname = f'{stem}_sliced_{axis}{slices_n}.3mf'
