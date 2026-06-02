@@ -156,35 +156,36 @@ def _facade_cut(mesh, axis_idx, depth_ratio):
     return mesh
 
 
-def _make_lens_side_neg(w_wide, w_narrow, z_lo, z_hi, big, ax, slab_center, slab_thick, side):
+def _make_lens_side_neg(w_wide, w_narrow, h_lo, h_hi, big, ax, height_ax, slab_center, slab_thick, side):
     """Parabolic lens-shaped negative modifier for one side of one slab.
 
-    side: -1 = left (negative width-axis), +1 = right (positive width-axis)
-    ax:   0=X or 1=Y slice axis; lens is not applied for ax=2
-    z_lo/z_hi: Z bounds of the component this modifier belongs to
+    side:      -1 = negative depth-axis, +1 = positive depth-axis
+    ax:        slice axis (0/1/2)
+    height_ax: axis used for the height profile (the taller non-slice axis per component)
+    depth_ax:  inferred as the remaining non-slice, non-height axis
+    h_lo/h_hi: bounds of this component along height_ax
     """
     try:
         import trimesh
         import numpy as np
         from shapely.geometry import Polygon as SPoly
 
-        if ax not in (0, 1):
+        depth_ax = [i for i in (0, 1, 2) if i not in (ax, height_ax)][0]
+        h_half = (h_hi - h_lo) / 2.0
+        if h_half <= 0 or w_wide <= 0:
             return None
-        z_half = (z_hi - z_lo) / 2.0
-        if z_half <= 0 or w_wide <= 0:
-            return None
-        z_ctr = (z_lo + z_hi) / 2.0
+        h_ctr = (h_lo + h_hi) / 2.0
 
-        zs = np.linspace(z_lo, z_hi, 40)
-        ws = [max(w_wide - (w_wide - w_narrow) * min(1.0, abs(z - z_ctr) / z_half) ** 2, 0.1)
-              for z in zs]
+        hs = np.linspace(h_lo, h_hi, 40)
+        ws = [max(w_wide - (w_wide - w_narrow) * min(1.0, abs(h - h_ctr) / h_half) ** 2, 0.1)
+              for h in hs]
 
-        # Polygon in (u, v): u = width axis, v = world Z
-        # For each side: the region outside the lens edge to the far boundary (±big/2)
+        # Polygon in (u=depth_axis, v=height_axis):
+        # region outside lens edge to far boundary (±big/2) on the given side
         far = big / 2.0
         sgn = -1 if side < 0 else 1
-        lens_pts = [(sgn * ws[i] / 2.0, zs[i]) for i in range(len(zs))]
-        pts = lens_pts + [(sgn * far, z_hi), (sgn * far, z_lo)]
+        lens_pts = [(sgn * ws[i] / 2.0, hs[i]) for i in range(len(hs))]
+        pts = lens_pts + [(sgn * far, h_hi), (sgn * far, h_lo)]
 
         poly = SPoly(pts)
         if not poly.is_valid:
@@ -195,21 +196,17 @@ def _make_lens_side_neg(w_wide, w_narrow, z_lo, z_hi, big, ax, slab_center, slab
         h = slab_thick + 0.2
         extruded = trimesh.creation.extrude_polygon(poly, h)
 
-        # Map local axes → world:
-        #   local u (polygon x) → world width-axis  (X=0 if ax=1, Y=1 if ax=0)
-        #   local v (polygon y) → world Z
-        #   local z_ext         → world slice-axis, centred at slab_center
+        # Generic transform: local(u, v, z_ext) → world
+        #   local u  → world depth_ax
+        #   local v  → world height_ax
+        #   local z_ext → world ax, centred at slab_center
         shift = slab_center - h / 2.0
-        if ax == 1:   # Y-slicing: width=X, extrude along Y
-            T = np.array([[1, 0, 0, 0],
-                          [0, 0, 1, shift],
-                          [0, 1, 0, 0],
-                          [0, 0, 0, 1]], dtype=float)
-        else:         # X-slicing: width=Y, extrude along X
-            T = np.array([[0, 0, 1, shift],
-                          [1, 0, 0, 0],
-                          [0, 1, 0, 0],
-                          [0, 0, 0, 1]], dtype=float)
+        T = np.zeros((4, 4))
+        T[3, 3] = 1.0
+        T[depth_ax, 0] = 1.0
+        T[height_ax, 1] = 1.0
+        T[ax, 2] = 1.0
+        T[ax, 3] = shift
         extruded.apply_transform(T)
         return extruded
     except Exception:
@@ -469,24 +466,28 @@ def api_slice():
             box.apply_translation(center_pt)
             gap_boxes.append(box)
 
-        # Lens modifiers: per-component parabolic side trimmers
-        # Split mesh into disconnected components (e.g. individual letters) so each
-        # component uses its own Z range for the lens profile — prevents small components
-        # from losing their fins at top/bottom due to global Z scaling.
+        # Lens modifiers: per-component parabolic side trimmers.
+        # height_ax = the taller non-slice axis of each component (usually Y for
+        # standing letters); depth_ax = the shorter one (usually Z = extrusion depth).
+        # This prevents flat/long modifiers when the model's visual height is not Z.
         if use_lens:
             components = mesh.split(only_watertight=False)
             if not components or len(components) > 50:
                 components = [mesh]
+            non_slice = [i for i in (0, 1, 2) if i != ax]
             for comp in components:
-                cz_lo = float(comp.bounds[0][2])
-                cz_hi = float(comp.bounds[1][2])
+                h_ax = (non_slice[0]
+                        if comp.extents[non_slice[0]] >= comp.extents[non_slice[1]]
+                        else non_slice[1])
+                ch_lo = float(comp.bounds[0][h_ax])
+                ch_hi = float(comp.bounds[1][h_ax])
                 for i in range(slices_n):
                     center = lo + pitch * (i + (1.0 - gap) / 2.0)
                     t_i = slab_hi_list[i] - slab_lo_list[i]
                     for side in (-1, 1):
                         neg = _make_lens_side_neg(
-                            w_wide, w_narrow, cz_lo, cz_hi,
-                            big, ax, center, t_i, side
+                            w_wide, w_narrow, ch_lo, ch_hi,
+                            big, ax, h_ax, center, t_i, side
                         )
                         if neg is not None:
                             gap_boxes.append(neg)
