@@ -572,33 +572,35 @@ def api_slice():
         if not slabs:
             return jsonify(error='Не удалось нарезать модель'), 500
 
-        combined = trimesh.util.concatenate(slabs)
-
-        # Remove degenerate artifact components (< 20 faces) and fix normals.
-        parts = [c for c in combined.split(only_watertight=False) if len(c.faces) >= 20]
-        if parts:
-            for p in parts:
-                trimesh.repair.fix_normals(p)
-            combined = trimesh.util.concatenate(parts)
+        # Build 3MF scene: each slab component as a separate named object.
+        scene = trimesh.Scene()
+        obj_idx = 0
+        for slab_idx, slab in enumerate(slabs):
+            for comp in slab.split(only_watertight=False):
+                if len(comp.faces) < 20:
+                    continue
+                trimesh.repair.fix_normals(comp)
+                obj_idx += 1
+                scene.add_geometry(comp, geom_name=f'slab_{obj_idx:02d}')
 
         # Add base plate
         if base_mode == 'with':
             try:
-                base = _make_base_plate(combined, base_width, base_length, mesh.bounds)
-                if base is not None:
-                    combined = trimesh.util.concatenate([combined, base])
+                base_plate = _make_base_plate(None, base_width, base_length, mesh.bounds)
+                if base_plate is not None:
+                    scene.add_geometry(base_plate, geom_name='base')
             except Exception:
                 pass
 
-        out_bytes = combined.export(file_type='stl')
+        out_bytes = scene.export(file_type='3mf')
 
     stem  = os.path.splitext(secure_filename(f.filename or 'model'))[0]
-    dname = f'{stem}_sliced_{axis}{slices_n}.stl'
+    dname = f'{stem}_sliced_{axis}{slices_n}.3mf'
     return send_file(
         io.BytesIO(out_bytes),
         as_attachment=True,
         download_name=dname,
-        mimetype='application/octet-stream',
+        mimetype='model/3mf',
     )
 
 

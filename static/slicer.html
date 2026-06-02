@@ -1779,7 +1779,7 @@ async function generate() {
     }
     const blob = await res.blob();
     const stem = f.name.replace(/\.stl$/i, '');
-    const name = `${stem}_sliced_${currentAxis}${slices}_g${gap.replace('.','')}.stl`;
+    const name = `${stem}_sliced_${currentAxis}${slices}_g${gap.replace('.','')}.3mf`;
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = name; a.click();
