@@ -1038,23 +1038,22 @@ varying vec3 vWNorm;
 void main(){
   float p = (uAxis==0)?vPos.x:(uAxis==1)?vPos.y:vPos.z;
   float t = clamp((p-uMin)/(uMax-uMin),0.,1.);
-  float pitch = 1./uSlices;
-  float within = mod(t,pitch)/pitch;
-  // Each slab is centred within its pitch interval: equal half-gap at both
-  // model edges so the first and last slab look identical (no cutoff/overflow).
-  // Matches Python export which uses center = lo + (i+0.5)*pitch.
-  bool inSlab = within > uGap * 0.5 && within < (1.0 - uGap * 0.5);
+  // pitch = 1/(n-gap): first slab starts at model edge, last ends at model edge,
+  // all internal gaps equal. Matches Python: center = lo + pitch*(i+(1-gap)/2).
+  float pitch = 1.0 / max(uSlices - uGap, 0.001);
+  float within = mod(t, pitch) / pitch;
+  bool inSlab = within < (1.0 - uGap + 1e-5);
 
   // Lens profile: width varies with world-Z height (wide at centre, narrow at top/bottom)
   bool isInsideLens = true;
   if(inSlab && uWWide > 0.001 && uAxis != 2){
     float zRange = uZMax - uZMin;
-    float zNorm  = zRange > 0.001 ? (vPos.z - uZMin) / zRange : 0.5; // 0=bottom, 1=top
-    float tZ     = 2.0 * abs(zNorm - 0.5);          // 0 at mid-height, 1 at top/bot
+    float zNorm  = zRange > 0.001 ? (vPos.z - uZMin) / zRange : 0.5;
+    float tZ     = 2.0 * abs(zNorm - 0.5);
     float halfW  = (uWWide - (uWWide - uWNarrow) * tZ * tZ) * 0.5;  // parabola
 
-    // Distance of fragment from its slab centre along the slice axis (in model units)
-    float slabCenter3d = uMin + (floor(t / pitch) + 0.5) * (uMax - uMin) / uSlices;
+    float pitchW = (uMax - uMin) / max(uSlices - uGap, 0.001);
+    float slabCenter3d = uMin + pitchW * (floor(t / pitch) + (1.0 - uGap) * 0.5);
     float axDist = abs(p - slabCenter3d);
     isInsideLens = axDist <= halfW;
   }

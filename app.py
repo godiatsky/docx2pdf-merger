@@ -446,7 +446,9 @@ def api_slice():
 
         lo  = float(mesh.bounds[0][ax])
         hi  = float(mesh.bounds[1][ax])
-        pitch     = (hi - lo) / slices_n
+        # pitch = total/(n-gap) ensures first slab starts exactly at lo and
+        # last slab ends exactly at hi with equal internal gaps, no edge cutoff.
+        pitch     = (hi - lo) / max(slices_n - gap, 1e-6)
         thickness = pitch * (1.0 - gap)
         big       = float(max(mesh.extents) * 10)
 
@@ -466,7 +468,7 @@ def api_slice():
 
         slabs = []
         for i in range(slices_n):
-            center = lo + (i + 0.5) * pitch
+            center = lo + pitch * (i + (1.0 - gap) / 2.0)
 
             # Build a box cutter for this slab
             box_extents = [big, big, big]
