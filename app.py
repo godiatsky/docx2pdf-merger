@@ -474,15 +474,16 @@ def api_slice():
             slab_lo_list.append(center - thickness / 2.0)
             slab_hi_list.append(center + thickness / 2.0)
 
-        # Gap ranges: before first slab, between slabs, after last slab
-        gap_ranges = [(lo - big, slab_lo_list[0])]
+        # Gap ranges: only between slabs (slabs span lo→hi exactly, no outer gaps needed)
+        gap_ranges = []
         for i in range(slices_n - 1):
             gap_ranges.append((slab_hi_list[i], slab_lo_list[i + 1]))
-        gap_ranges.append((slab_hi_list[-1], hi + big))
 
-        # Build gap box meshes (big in the two non-slice axes)
+        # Build gap box meshes — just slightly larger than model cross-section
         cx = (mesh.bounds[0][a1] + mesh.bounds[1][a1]) / 2.0
         cz = (mesh.bounds[0][a2] + mesh.bounds[1][a2]) / 2.0
+        cover_a1 = float(mesh.extents[a1]) + 20.0
+        cover_a2 = float(mesh.extents[a2]) + 20.0
         gap_boxes = []
         for g_lo, g_hi in gap_ranges:
             sz = g_hi - g_lo
@@ -494,8 +495,8 @@ def api_slice():
             center_pt[a2] = cz
             extents = np.zeros(3)
             extents[ax] = sz
-            extents[a1] = big * 2
-            extents[a2] = big * 2
+            extents[a1] = cover_a1
+            extents[a2] = cover_a2
             box = trimesh.creation.box(extents=extents)
             box.apply_translation(center_pt)
             gap_boxes.append(box)
