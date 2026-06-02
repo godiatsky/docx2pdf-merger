@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="uk">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,17 +11,17 @@
 
 :root{
   --bg:#080808;
-  --s1:#111;
-  --s2:#171717;
-  --s3:#202020;
-  --border:#252525;
-  --border2:#303030;
+  --s1:#0c0c0c;
+  --s2:#141414;
+  --s3:#1c1c1c;
+  --border:#2a2a2a;
+  --border2:#383838;
   --accent:#c8a45a;
   --accent-glow:rgba(200,164,90,.12);
   --accent-dim:rgba(200,164,90,.18);
-  --text:#ebebeb;
-  --text2:#7a7a7a;
-  --text3:#3d3d3d;
+  --text:#f2f2f2;
+  --text2:#9a9a9a;
+  --text3:#4a4a4a;
   --ok:#4caf6a;
   --ok-dim:rgba(76,175,106,.12);
   --err:#e05252;
@@ -610,14 +610,14 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
     <button class="dz-x" ondragenter="dzOver(event)" ondragover="dzOver(event)"
             ondrop="dzDrop(event)" onclick="clearFile(event)">✕</button>
     <div class="dz-ico" id="dzIco">◈</div>
-    <div class="dz-name" id="dzName">Drop STL file here</div>
-    <div class="dz-sub" id="dzSub">or click to browse</div>
+    <div class="dz-name" id="dzName">Перетягни STL сюди</div>
+    <div class="dz-sub" id="dzSub">або натисни для вибору</div>
   </div>
 
   <!-- ─── PRINTER section (collapsible) ─── -->
   <div>
     <div class="section-toggle" onclick="toggleSection('printerBody', this)">
-      <span class="lbl">Printer</span>
+      <span class="lbl">Принтер</span>
       <span class="toggle-arrow">▸</span>
     </div>
     <div class="section-body" id="printerBody">
@@ -644,7 +644,7 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
         </div>
       </div>
       <div class="toggle-row">
-        <label for="showBedToggle">Show bed</label>
+        <label for="showBedToggle">Показати стіл</label>
         <label class="toggle-sw">
           <input type="checkbox" id="showBedToggle" onchange="onShowBed()">
           <span class="track"></span><span class="thumb"></span>
@@ -655,13 +655,22 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
 
   <div class="hr"></div>
 
+  <!-- ─── Orientation ─── -->
+  <div class="sl-group">
+    <span class="sl-key" style="font-size:11px">Орієнтація</span>
+    <div class="seg-ctrl cols2">
+      <button class="seg-btn on" id="flipStandBtn" onclick="setFlip(0)">Стоячи</button>
+      <button class="seg-btn" id="flipLayBtn" onclick="setFlip(90)">Лежачи</button>
+    </div>
+  </div>
+
   <!-- ─── MODEL section ─── -->
-  <div class="lbl">Model</div>
+  <div class="lbl">Модель</div>
 
   <!-- Axis -->
   <div>
     <div class="sl-head" style="margin-bottom:6px">
-      <span class="sl-key" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase">Slice Axis</span>
+      <span class="sl-key" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase">Вісь зрізу</span>
     </div>
     <div class="axis-sel">
       <button class="axis-btn" onclick="setAxis('X')">X</button>
@@ -673,18 +682,18 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
   <!-- Scale -->
   <div class="sl-group">
     <div class="sl-head">
-      <span class="sl-key">Scale</span>
+      <span class="sl-key">Масштаб</span>
       <span class="st-v dim" id="stModelSize" style="font-size:11px">—</span>
     </div>
     <input type="text" class="txt-input" id="scaleInput"
-           placeholder="e.g. 150mm or 80%"
+           placeholder="напр. 150мм або 80%"
            onblur="onScaleChange()" onkeydown="if(event.key==='Enter')onScaleChange()">
   </div>
 
   <!-- Slices -->
   <div class="sl-group">
     <div class="sl-head">
-      <span class="sl-key">Slices</span>
+      <span class="sl-key">Зрізи</span>
       <span class="sl-val" id="slVal">30</span>
     </div>
     <input type="range" id="slInput" min="5" max="120" value="30" oninput="onParams()">
@@ -693,7 +702,7 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
   <!-- Gap -->
   <div class="sl-group">
     <div class="sl-head">
-      <span class="sl-key">Gap ratio</span>
+      <span class="sl-key">Зазор</span>
       <span class="sl-val" id="gapVal">0.45</span>
     </div>
     <input type="range" id="gapInput" min="10" max="85" value="45" oninput="onParams()">
@@ -701,24 +710,34 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
 
   <div class="hr"></div>
 
+  <!-- ─── Color ─── -->
+  <div class="sl-group">
+    <div class="sl-head">
+      <span class="sl-key">Колір моделі</span>
+      <input type="color" id="colorPicker" value="#e0dcd6"
+             style="width:32px;height:22px;border:none;border-radius:4px;cursor:pointer;background:none;padding:0"
+             oninput="onColorChange(this.value)">
+    </div>
+  </div>
+
   <!-- ─── PROFILE section ─── -->
-  <div class="lbl">Profile</div>
+  <div class="lbl">Профіль</div>
 
   <div class="sl-group">
     <div class="sl-head">
-      <span class="sl-key">Width center (W_wide)</span>
+      <span class="sl-key">Ширина центру</span>
       <span class="sl-val" id="wWideVal">0</span>
     </div>
     <div class="sl-with-num">
       <input type="range" id="wWideSlider" min="0" max="200" value="0" oninput="onWWide(this.value)">
       <input type="number" class="num-input" id="wWideNum" value="0" min="0" max="20" step="0.5" oninput="onWWideNum(this.value)">
     </div>
-    <div style="font-size:10px;color:var(--text3);margin-top:2px">slab thickness: <span id="wWideHint">—</span></div>
+    <div style="font-size:10px;color:var(--text3);margin-top:2px">товщина зрізу: <span id="wWideHint">—</span></div>
   </div>
 
   <div class="sl-group">
     <div class="sl-head">
-      <span class="sl-key">Width top/bot (W_narrow)</span>
+      <span class="sl-key">Ширина краю</span>
       <span class="sl-val" id="wNarrowVal">0</span>
     </div>
     <div class="sl-with-num">
@@ -733,34 +752,34 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
          style="display:block;overflow:visible">
       <line x1="100" y1="0" x2="100" y2="54" stroke="#252525" stroke-width="1"/>
       <path id="lensPath" d="" fill="rgba(200,164,90,0.15)" stroke="#c8a45a" stroke-width="1.5"/>
-      <text x="100" y="50" text-anchor="middle" fill="#3d3d3d" font-size="9" font-family="DM Mono,monospace">lens profile</text>
+      <text x="100" y="50" text-anchor="middle" fill="#3d3d3d" font-size="9" font-family="DM Mono,monospace">профіль лінзи</text>
     </svg>
   </div>
 
   <div class="hr"></div>
 
   <!-- ─── OUTPUT section ─── -->
-  <div class="lbl">Output</div>
+  <div class="lbl">Виведення</div>
 
   <!-- Base mode -->
   <div class="sl-group">
-    <span class="sl-key" style="font-size:11px">Base plate</span>
+    <span class="sl-key" style="font-size:11px">Основа</span>
     <div class="seg-ctrl cols2">
-      <button class="seg-btn on" id="baseNoneBtn" onclick="setBase('none')">No base</button>
-      <button class="seg-btn" id="baseWithBtn" onclick="setBase('with')">With base</button>
+      <button class="seg-btn on" id="baseNoneBtn" onclick="setBase('none')">Без основи</button>
+      <button class="seg-btn" id="baseWithBtn" onclick="setBase('with')">З основою</button>
     </div>
   </div>
 
   <div id="baseWidthRow" style="display:none" class="sl-group">
     <div class="sl-head">
-      <span class="sl-key">Base width</span>
+      <span class="sl-key">Ширина основи</span>
       <span class="sl-val" id="baseWidthVal">200 mm</span>
     </div>
     <input type="range" id="baseWidthSlider" min="10" max="500" step="1" value="200" oninput="onBaseSize()">
   </div>
   <div id="baseLengthRow" style="display:none" class="sl-group">
     <div class="sl-head">
-      <span class="sl-key">Base length</span>
+      <span class="sl-key">Глибина основи</span>
       <span class="sl-val" id="baseLengthVal">200 mm</span>
     </div>
     <input type="range" id="baseLengthSlider" min="10" max="500" step="1" value="200" oninput="onBaseSize()">
@@ -768,7 +787,7 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
 
   <!-- Facade -->
   <div class="toggle-row">
-    <label for="facadeToggle">Facade only (cut depth)</label>
+    <label for="facadeToggle">Тільки фасад (глибина зрізу)</label>
     <label class="toggle-sw">
       <input type="checkbox" id="facadeToggle" onchange="onFacadeToggle()">
       <span class="track"></span><span class="thumb"></span>
@@ -783,7 +802,7 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
 
   <!-- Numbering -->
   <div class="toggle-row">
-    <label for="numberingToggle">Number each slice</label>
+    <label for="numberingToggle">Нумерувати зрізи</label>
     <label class="toggle-sw">
       <input type="checkbox" id="numberingToggle">
       <span class="track"></span><span class="thumb"></span>
@@ -791,7 +810,7 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
   </div>
   <div class="sl-group" id="numSizeRow" style="display:none">
     <div class="sl-head">
-      <span class="sl-key">Number size</span>
+      <span class="sl-key">Розмір номера</span>
       <span class="sl-val" id="numSizeVal">5.0 mm</span>
     </div>
     <input type="range" id="numSizeSlider" min="2" max="15" step="0.5" value="5" oninput="onNumSize(this.value)">
@@ -802,31 +821,31 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
   <!-- Stats -->
   <div class="stats">
     <div class="st-row">
-      <span class="st-k">Pitch</span>
+      <span class="st-k">Крок</span>
       <span class="st-v" id="stPitch">—</span>
     </div>
     <div class="prog-wrap">
       <div class="prog-bar" id="progBar" style="width:55%"></div>
     </div>
     <div class="st-row">
-      <span class="st-k">Slab</span>
+      <span class="st-k">Зріз</span>
       <span class="st-v accent" id="stSlab">—</span>
     </div>
     <div class="st-row">
-      <span class="st-k">Gap</span>
+      <span class="st-k">Зазор</span>
       <span class="st-v" id="stGap">—</span>
     </div>
     <div class="hr"></div>
     <div class="st-row">
-      <span class="st-k">Model size</span>
+      <span class="st-k">Розмір моделі</span>
       <span class="st-v dim" id="stModel">load STL</span>
     </div>
     <div class="st-row">
-      <span class="st-k">Triangles</span>
+      <span class="st-k">Трикутники</span>
       <span class="st-v dim" id="stTris">—</span>
     </div>
     <div class="st-row" id="stLensRow" style="display:none">
-      <span class="st-k">W wide / narrow</span>
+      <span class="st-k">Ш шир / вузьк</span>
       <span class="st-v dim" id="stLens">—</span>
     </div>
   </div>
@@ -834,7 +853,7 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
   <!-- Generate -->
   <button class="gen-btn" id="genBtn" disabled onclick="generate()">
     <div class="spin" id="genSpin"></div>
-    <span id="genLabel">Generate STL</span>
+    <span id="genLabel">Генерувати STL</span>
   </button>
 
 </aside>
@@ -845,22 +864,22 @@ input[type=range]:active::-webkit-slider-thumb{cursor:grabbing}
 
   <div class="hint" id="hint">
     <div class="hint-ring">◈</div>
-    <div class="hint-text">Drop an STL file to begin</div>
-    <div class="hint-sub">Adjust slices and gap, then export</div>
+    <div class="hint-text">Завантажте STL файл</div>
+    <div class="hint-sub">Налаштуйте параметри та експортуйте</div>
   </div>
 
   <div class="hud">
-    <div class="hud-pill"><button onclick="resetCam()">Reset camera</button></div>
+    <div class="hud-pill"><button onclick="resetCam()">Скинути камеру</button></div>
     <div class="hud-pill" id="hudInfo" style="display:none"></div>
   </div>
 
   <div class="view-bar">
-    <button onclick="_snapToFace('FRONT')">Front</button>
-    <button onclick="_snapToFace('BACK')">Back</button>
-    <button onclick="_snapToFace('LEFT')">Left</button>
-    <button onclick="_snapToFace('RIGHT')">Right</button>
-    <button onclick="_snapToFace('TOP')">Top</button>
-    <button onclick="_snapToFace('BOTTOM')">Bottom</button>
+    <button onclick="_snapToFace('FRONT')">Спереду</button>
+    <button onclick="_snapToFace('BACK')">Ззаду</button>
+    <button onclick="_snapToFace('LEFT')">Ліворуч</button>
+    <button onclick="_snapToFace('RIGHT')">Праворуч</button>
+    <button onclick="_snapToFace('TOP')">Зверху</button>
+    <button onclick="_snapToFace('BOTTOM')">Знизу</button>
   </div>
 
   <div class="corner" id="corner"></div>
@@ -1505,8 +1524,8 @@ function clearFile(e) {
   const dz = document.getElementById('dz');
   dz.classList.remove('loaded');
   document.getElementById('dzIco').textContent = '◈';
-  document.getElementById('dzName').textContent = 'Drop STL file here';
-  document.getElementById('dzSub').textContent = 'or click to browse';
+  document.getElementById('dzName').textContent = 'Перетягни STL сюди';
+  document.getElementById('dzSub').textContent = 'або натисни для вибору';
   document.getElementById('fileInput').value = '';
   storedFile = null;
   document.getElementById('genBtn').disabled = true;
@@ -1661,6 +1680,18 @@ function onBaseSize() {
   if (window._updateBasePreview) window._updateBasePreview();
 }
 
+function setFlip(angle) {
+  window.flipAngle = angle;
+  document.getElementById('flipStandBtn').classList.toggle('on', angle === 0);
+  document.getElementById('flipLayBtn').classList.toggle('on', angle === 90);
+  if (window._applyFlip) window._applyFlip(angle);
+}
+
+function onColorChange(hex) {
+  window.modelColor = hex;
+  if (window._applyColor) window._applyColor(hex);
+}
+
 /* ─── facade ───────────────────────────────── */
 function onFacadeToggle() {
   const on = document.getElementById('facadeToggle').checked;
@@ -1740,7 +1771,7 @@ async function generate() {
 
   btn.classList.remove('loading');
   spin.style.display = 'none';
-  label.textContent = 'Generate STL';
+  label.textContent = 'Генерувати STL';
 }
 
 function showToast(msg) {
