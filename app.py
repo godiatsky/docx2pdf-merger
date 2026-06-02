@@ -525,11 +525,18 @@ def api_slice():
                 except Exception:
                     pass
 
-        # Export as Bambu Studio 3MF with negative_volume modifiers
-        import zipfile
+        # ─── Export Bambu 3MF with negative_part modifiers ──────────────────────
+        import zipfile, uuid as _uuid
         from lxml import etree
 
-        ns = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
+        ns_core = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
+        ns_prod = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06"
+        ns_bs   = "http://schemas.bambulab.com/package/2021"
+        P_      = f'{{{ns_prod}}}'
+        IDENT16 = "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"
+        IDENT12 = "1 0 0 0 1 0 0 0 1 0 0 0"
+
+        def _uid(): return str(_uuid.uuid4()).upper()
 
         def _write_mesh(parent, obj_id, tmesh, name):
             obj_el = etree.SubElement(parent, 'object',
@@ -545,50 +552,101 @@ def api_slice():
                                  v1=str(face[0]), v2=str(face[1]), v3=str(face[2]))
 
         model_name = os.path.splitext(secure_filename(f.filename or 'model'))[0]
-        root = etree.Element('model', nsmap={None: ns}, unit='millimeter')
-        resources = etree.SubElement(root, 'resources')
 
-        _write_mesh(resources, 1, mesh, model_name)
-        for gi, gb in enumerate(gap_boxes):
-            _write_mesh(resources, 2 + gi, gb, f'gap_{gi + 1:02d}')
+        # Collect parts: original mesh first, then gap boxes as negative_part
+        main_parts = [(mesh, model_name, 'normal_part')] + \
+                     [(gb, f'gap_{gi+1:02d}', 'negative_part')
+                      for gi, gb in enumerate(gap_boxes)]
+        n_main = len(main_parts)
+        asm_id = n_main + 1
 
-        n_parts = 1 + len(gap_boxes)
-        asm_id = n_parts + 1
-        asm = etree.SubElement(resources, 'object',
-                               id=str(asm_id), type='model', name=model_name)
-        comps = etree.SubElement(asm, 'components')
-        for oid in range(1, n_parts + 1):
-            etree.SubElement(comps, 'component', objectid=str(oid))
-
-        build = etree.SubElement(root, 'build')
-        etree.SubElement(build, 'item', objectid=str(asm_id))
-
-        # Base plate as separate build item (not affected by gap modifiers)
+        # Optional base plate resolved before XML build so bp_id is known
+        base_plate = None
         if base_mode == 'with':
             try:
-                bp = _make_base_plate(None, base_width, base_length, mesh.bounds)
-                if bp is not None:
-                    bp_id = asm_id + 1
-                    _write_mesh(resources, bp_id, bp, 'base')
-                    etree.SubElement(build, 'item', objectid=str(bp_id))
+                base_plate = _make_base_plate(None, base_width, base_length, mesh.bounds)
             except Exception:
                 pass
+        bp_id = asm_id + 1 if base_plate is not None else None
 
-        model_xml = etree.tostring(root, xml_declaration=True,
-                                   encoding='utf-8', pretty_print=True)
+        # ── 3D/Objects/object_1.model: all mesh data ──────────────────────────
+        obj_root = etree.Element('model', nsmap={None: ns_core}, unit='millimeter')
+        obj_res = etree.SubElement(obj_root, 'resources')
+        for idx, (tmesh_, name_, _) in enumerate(main_parts, start=1):
+            _write_mesh(obj_res, idx, tmesh_, name_)
+        obj_xml = etree.tostring(obj_root, xml_declaration=True,
+                                 encoding='UTF-8', pretty_print=True)
 
-        # Bambu model_settings.config: mark gap boxes as negative_volume
+        # ── 3D/3dmodel.model: assembly structure ──────────────────────────────
+        main_root = etree.Element('model',
+                                  nsmap={None: ns_core, 'p': ns_prod, 'BambuStudio': ns_bs},
+                                  unit='millimeter')
+        main_root.set('requiredextensions', 'p')
+        main_res = etree.SubElement(main_root, 'resources')
+
+        asm_obj = etree.SubElement(main_res, 'object',
+                                   id=str(asm_id), type='model', name=model_name)
+        asm_obj.set(P_ + 'UUID', _uid())
+        comps = etree.SubElement(asm_obj, 'components')
+        for idx in range(1, n_main + 1):
+            comp = etree.SubElement(comps, 'component',
+                                    objectid=str(idx), transform=IDENT16)
+            comp.set(P_ + 'path', '/3D/Objects/object_1.model')
+            comp.set(P_ + 'UUID', _uid())
+
+        # Base plate as inline object in main model (standalone, no modifiers)
+        if base_plate is not None:
+            _write_mesh(main_res, bp_id, base_plate, 'base')
+
+        # Place assembly on build plate: bottom at Z=0, centred at (128, 128)
+        ext_z = float(mesh.extents[2])
+        build_tf = f"1 0 0 0 1 0 0 0 1 128.00000 128.00000 {ext_z / 2.0:.5f}"
+
+        build_el = etree.SubElement(main_root, 'build')
+        build_el.set(P_ + 'UUID', _uid())
+        asm_item = etree.SubElement(build_el, 'item',
+                                    objectid=str(asm_id),
+                                    transform=build_tf, printable='1')
+        asm_item.set(P_ + 'UUID', _uid())
+        if bp_id:
+            bp_item = etree.SubElement(build_el, 'item',
+                                       objectid=str(bp_id), printable='1')
+            bp_item.set(P_ + 'UUID', _uid())
+
+        main_xml = etree.tostring(main_root, xml_declaration=True,
+                                  encoding='UTF-8', pretty_print=True)
+
+        # ── Metadata/model_settings.config ────────────────────────────────────
         cfg = etree.Element('config')
-        obj_el = etree.SubElement(cfg, 'object', id=str(asm_id))
-        p = etree.SubElement(obj_el, 'part', id='1', subtype='normal_part')
-        etree.SubElement(p, 'metadata', key='name', value=model_name)
-        for gi in range(len(gap_boxes)):
-            p = etree.SubElement(obj_el, 'part',
-                                 id=str(2 + gi), subtype='negative_volume')
-            etree.SubElement(p, 'metadata', key='name', value=f'gap_{gi + 1:02d}')
-        config_xml = etree.tostring(cfg, xml_declaration=True,
-                                    encoding='utf-8', pretty_print=True)
+        obj_cfg = etree.SubElement(cfg, 'object', id=str(asm_id))
+        etree.SubElement(obj_cfg, 'metadata', key='name', value=model_name)
+        etree.SubElement(obj_cfg, 'metadata', key='extruder', value='1')
+        etree.SubElement(obj_cfg, 'metadata', face_count=str(len(mesh.faces)))
+        for idx, (tmesh_, name_, subtype) in enumerate(main_parts, start=1):
+            p_el = etree.SubElement(obj_cfg, 'part', id=str(idx), subtype=subtype)
+            etree.SubElement(p_el, 'metadata', key='name', value=name_)
+            etree.SubElement(p_el, 'metadata', key='matrix', value=IDENT16)
+            if subtype == 'negative_part':
+                etree.SubElement(p_el, 'metadata', key='extruder', value='0')
+            etree.SubElement(p_el, 'mesh_stat',
+                             face_count=str(len(tmesh_.faces)),
+                             edges_fixed='0', degenerate_facets='0',
+                             facets_removed='0', facets_reversed='0',
+                             backwards_edges='0')
+        plate_el = etree.SubElement(cfg, 'plate')
+        for k, v in [('plater_id', '1'), ('plater_name', ''), ('locked', 'false')]:
+            etree.SubElement(plate_el, 'metadata', key=k, value=v)
+        mi_el = etree.SubElement(plate_el, 'model_instance')
+        for k, v in [('object_id', str(asm_id)), ('instance_id', '0'), ('identify_id', '1')]:
+            etree.SubElement(mi_el, 'metadata', key=k, value=v)
+        assm_sec = etree.SubElement(cfg, 'assemble')
+        etree.SubElement(assm_sec, 'assemble_item',
+                         object_id=str(asm_id), instance_id='0',
+                         transform=IDENT12, offset="0 0 0")
+        cfg_xml = etree.tostring(cfg, xml_declaration=True,
+                                 encoding='UTF-8', pretty_print=True)
 
+        # ── Pack ZIP ──────────────────────────────────────────────────────────
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
             zf.writestr('[Content_Types].xml',
@@ -604,8 +662,15 @@ def api_slice():
                         '<Relationship Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"'
                         ' Target="/3D/3dmodel.model" Id="rel0"/>'
                         '</Relationships>')
-            zf.writestr('3D/3dmodel.model', model_xml)
-            zf.writestr('Metadata/model_settings.config', config_xml)
+            zf.writestr('3D/_rels/3dmodel.model.rels',
+                        '<?xml version="1.0" encoding="utf-8"?>'
+                        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                        '<Relationship Target="/3D/Objects/object_1.model" Id="rel-1"'
+                        ' Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>'
+                        '</Relationships>')
+            zf.writestr('3D/3dmodel.model', main_xml)
+            zf.writestr('3D/Objects/object_1.model', obj_xml)
+            zf.writestr('Metadata/model_settings.config', cfg_xml)
 
         out_bytes = buf.getvalue()
 
