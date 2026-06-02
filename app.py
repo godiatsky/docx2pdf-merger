@@ -463,32 +463,82 @@ def api_slice():
         # Normal vector for the slice axis
         n_vec = np.zeros(3); n_vec[ax] = 1.0
 
-        def _cut_slab(src_mesh, ax_vec, lo_pt, hi_pt):
-            """Return mesh slab [lo, hi] along ax_vec using two half-space cuts.
+        # Pre-cast rays for grid-based cap generation (used when cap=True fails).
+        # Single cast covers all 17 slab boundaries via binary search.
+        _cap_ray_data = None
+        try:
+            other_ax = [i for i in range(3) if i != ax]
+            a1, a2 = other_ax
+            g1 = np.arange(mesh.bounds[0][a1], mesh.bounds[1][a1] + 3.0, 3.0)
+            g2 = np.arange(mesh.bounds[0][a2], mesh.bounds[1][a2] + 3.0, 3.0)
+            if len(g1) >= 2 and len(g2) >= 2:
+                G1, G2 = np.meshgrid(g1, g2)
+                n_rays = G1.size
+                ray_pts = np.zeros((n_rays, 3))
+                ray_pts[:, a1] = G1.ravel(); ray_pts[:, a2] = G2.ravel()
+                ray_pts[:, ax] = float(mesh.bounds[0][ax]) - 1.0
+                ray_dirs = np.zeros((n_rays, 3)); ray_dirs[:, ax] = 1.0
+                rlocs, ridx, _ = mesh.ray.intersects_location(
+                    ray_pts, ray_dirs, multiple_hits=True)
+                if len(rlocs) > 0:
+                    order = np.argsort(rlocs[:, ax])
+                    _cap_ray_data = (g1, g2, G1.shape, n_rays,
+                                     rlocs[order, ax], ridx[order])
+        except Exception:
+            pass
 
-            Tries three strategies in order until one produces non-empty geometry:
-              1. cap=True on both cuts   → closed slab faces
-              2. cap=False first + cap=True second → open on lo side
-              3. cap=False on both cuts  → open shell (still printable)
+        def _grid_cap(plane_pos):
+            """Create a flat cap mesh at plane_pos using pre-cast ray data."""
+            if _cap_ray_data is None:
+                return None
+            g1, g2, gshape, n_rays, locs_ax, idx_sorted = _cap_ray_data
+            below = np.searchsorted(locs_ax, plane_pos)
+            cnt = np.bincount(idx_sorted[:below], minlength=n_rays) if below > 0 else np.zeros(n_rays, int)
+            inside = (cnt % 2 == 1).reshape(gshape)
+            verts, faces = [], []
+            for r in range(gshape[0] - 1):
+                for c in range(gshape[1] - 1):
+                    if inside[r, c] or inside[r+1, c] or inside[r, c+1] or inside[r+1, c+1]:
+                        bi = len(verts)
+                        def _v(ri, ci):
+                            v = np.zeros(3); v[a1] = g1[ci]; v[a2] = g2[ri]; v[ax] = plane_pos
+                            return v
+                        verts.extend([_v(r,c), _v(r,c+1), _v(r+1,c), _v(r+1,c+1)])
+                        faces += [[bi, bi+1, bi+2], [bi+1, bi+3, bi+2]]
+            if not faces:
+                return None
+            return trimesh.Trimesh(vertices=np.array(verts), faces=np.array(faces))
+
+        def _cut_slab(src_mesh, ax_vec, slab_lo, slab_hi):
+            """Return solid slab mesh in [slab_lo, slab_hi] along ax_vec.
+
+            Strategy 1: cap=True on both cuts → watertight slab (best).
+            Fallback: cap=False surface + grid caps from pre-cast rays → solid.
             """
-            strategies = [
-                (True,  True),
-                (False, True),
-                (False, False),
-            ]
-            for cap1, cap2 in strategies:
-                try:
-                    s1 = trimesh.intersections.slice_mesh_plane(
-                        src_mesh, ax_vec, lo_pt, cap=cap1)
-                    if s1 is None or len(s1.faces) == 0:
-                        continue
-                    s2 = trimesh.intersections.slice_mesh_plane(
-                        s1, -ax_vec, hi_pt, cap=cap2)
+            lo_pt = ax_vec * slab_lo
+            hi_pt = ax_vec * slab_hi
+            # Strategy 1: fully capped (works on watertight / simple meshes)
+            try:
+                s1 = trimesh.intersections.slice_mesh_plane(src_mesh, ax_vec, lo_pt, cap=True)
+                if s1 is not None and len(s1.faces) > 0:
+                    s2 = trimesh.intersections.slice_mesh_plane(s1, -ax_vec, hi_pt, cap=True)
                     if s2 is not None and len(s2.faces) > 0:
                         return s2
-                except Exception:
-                    continue
-            return None
+            except Exception:
+                pass
+            # Fallback: open surface + ray-grid caps
+            try:
+                s1 = trimesh.intersections.slice_mesh_plane(src_mesh, ax_vec, lo_pt, cap=False)
+                if s1 is None or len(s1.faces) == 0:
+                    return None
+                s2 = trimesh.intersections.slice_mesh_plane(s1, -ax_vec, hi_pt, cap=False)
+                if s2 is None or len(s2.faces) == 0:
+                    return None
+                caps = [_grid_cap(slab_lo), _grid_cap(slab_hi)]
+                parts = [s2] + [c for c in caps if c is not None]
+                return trimesh.util.concatenate(parts) if len(parts) > 1 else parts[0]
+            except Exception:
+                return None
 
         slabs = []
         for i in range(slices_n):
@@ -496,7 +546,7 @@ def api_slice():
             slab_lo   = center - thickness / 2.0
             slab_hi   = center + thickness / 2.0
 
-            slab = _cut_slab(mesh, n_vec, n_vec * slab_lo, n_vec * slab_hi)
+            slab = _cut_slab(mesh, n_vec, slab_lo, slab_hi)
             if slab is None:
                 continue
 
