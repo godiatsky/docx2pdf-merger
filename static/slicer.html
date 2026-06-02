@@ -907,6 +907,7 @@ let currentFile = null;
 let currentMesh = null;
 let mat = null;
 let modelLocalBounds = null;
+let originalGeo = null;
 let currentAxis = 'Y';
 let bedMesh = null;
 let printerBed = { w: 180, d: 180, h: 180 };
@@ -1131,28 +1132,44 @@ function baseAxes() {
 function updateBasePreview() {
   if (basePlateMesh) { scene.remove(basePlateMesh); basePlateMesh.geometry.dispose(); basePlateMesh = null; }
   if (!modelLocalBounds || window.baseMode !== 'with') return;
-
-  const { ax, depthAxis, heightAxis } = baseAxes();
-  const bw = parseFloat(document.getElementById('baseWidthSlider').value)  || 200; // along slice axis
-  const bl = parseFloat(document.getElementById('baseLengthSlider').value) || 200; // along height axis
-
-  const ext = [1, 1, 1];
-  ext[ax]         = bw;
-  ext[heightAxis] = bl;
-  ext[depthAxis]  = 1; // 1mm thick
-
-  const geo = new THREE.BoxGeometry(ext[0], ext[1], ext[2]);
-  const mat2 = new THREE.MeshStandardMaterial({ color: 0xc8a45a, roughness: 0.5, metalness: 0.1, transparent: true, opacity: 0.65 });
+  const bw = parseFloat(document.getElementById('baseWidthSlider').value) || 200;
+  const bl = parseFloat(document.getElementById('baseLengthSlider').value) || 200;
+  // Base always flat in XY plane (Z-bottom), standard 3D printing orientation
+  const geo = new THREE.BoxGeometry(bw, bl, 1);
+  const color = window.modelColor ? parseInt(window.modelColor.replace('#','0x')) : 0xe0dcd6;
+  const mat2 = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.1, transparent: true, opacity: 0.65 });
   basePlateMesh = new THREE.Mesh(geo, mat2);
-
-  // Model is centred at origin, so slice/height stay at 0; sit the panel flush
-  // against the back (depth-min) face of the model.
-  const pos = [0, 0, 0];
-  pos[depthAxis] = modelLocalBounds.min.getComponent(depthAxis) - 0.5;
-  basePlateMesh.position.set(pos[0], pos[1], pos[2]);
+  basePlateMesh.position.set(0, 0, modelLocalBounds.min.z - 0.5);
   scene.add(basePlateMesh);
 }
 window._updateBasePreview = updateBasePreview;
+
+window._applyFlip = function(angle) {
+  if (!originalGeo) return;
+  if (currentMesh) { scene.remove(currentMesh); currentMesh.geometry.dispose(); }
+  const g = originalGeo.clone();
+  if (angle !== 0) {
+    g.applyMatrix4(new THREE.Matrix4().makeRotationX(angle * Math.PI / 180));
+    g.center();
+  }
+  g.computeBoundingBox();
+  modelLocalBounds = g.boundingBox.clone();
+  const sz = modelLocalBounds.getSize(new THREE.Vector3());
+  const axIdx = {X:0,Y:1,Z:2}[currentAxis];
+  mat = makeMat(modelLocalBounds.min.getComponent(axIdx), modelLocalBounds.max.getComponent(axIdx));
+  currentMesh = new THREE.Mesh(g, mat);
+  scene.add(currentMesh);
+  fitCamera(sz);
+  syncUniforms();
+  updateStats();
+  updateBasePreview();
+  updateBed();
+};
+
+window._applyColor = function(hex) {
+  const c = parseInt(hex.replace('#',''), 16);
+  if (basePlateMesh) basePlateMesh.material.color.setHex(c);
+};
 
 /* ─── bed helper ───────────────────────────── */
 function updateBed() {
@@ -1247,14 +1264,13 @@ function loadSTL(file) {
     geo.center();
     geo.computeBoundingBox();
 
+    originalGeo = geo.clone();
     modelLocalBounds = geo.boundingBox.clone();
     const sz = modelLocalBounds.getSize(new THREE.Vector3());
 
-    // Auto-set base size defaults: width spans the slice axis, length spans
-    // the height axis (both = model extent + 20mm border).
-    const ba = baseAxes();
-    const autoW = Math.round(ba.e[ba.ax]         + 20);
-    const autoL = Math.round(ba.e[ba.heightAxis] + 20);
+    // Auto-set base size defaults: width = sz.x + 20, length = sz.y + 20
+    const autoW = Math.round(sz.x + 20);
+    const autoL = Math.round(sz.y + 20);
     const wSlider = document.getElementById('baseWidthSlider');
     const lSlider = document.getElementById('baseLengthSlider');
     wSlider.max = Math.max(500, autoW * 2);
@@ -1400,9 +1416,11 @@ window._setAxisInternal = function(ax) {
     mat.uniforms.uMin.value  = modelLocalBounds.min.getComponent(axIdx);
     mat.uniforms.uMax.value  = modelLocalBounds.max.getComponent(axIdx);
     // Re-default base size for the new slice axis and refresh the panel.
-    const ba = baseAxes();
-    const autoW = Math.round(ba.e[ba.ax]         + 20);
-    const autoL = Math.round(ba.e[ba.heightAxis] + 20);
+    const sz2 = modelLocalBounds.getSize(new THREE.Vector3());
+    const autoW2 = Math.round(sz2.x + 20);
+    const autoL2 = Math.round(sz2.y + 20);
+    const autoW = autoW2;
+    const autoL = autoL2;
     const wSlider = document.getElementById('baseWidthSlider');
     const lSlider = document.getElementById('baseLengthSlider');
     wSlider.max = Math.max(500, autoW * 2);
@@ -1743,6 +1761,7 @@ async function generate() {
   fd.append('axis',            currentAxis);
   fd.append('scale',           scale);
   fd.append('base',            baseMode);
+  fd.append('flip', (window.flipAngle || 0) > 0 ? 'lay' : 'stand');
   fd.append('base_width',      baseWidth);
   fd.append('base_length',     baseLength);
   fd.append('facade',          facadeOn ? 'true' : 'false');
