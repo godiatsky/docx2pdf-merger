@@ -500,6 +500,10 @@ def api_slice():
             fin_profile = _fin_profile_parabolic(eff_wide, eff_narrow, h_lo_m, h_hi_m)
             if fin_profile is not None:
                 from shapely.geometry import box as shapely_box, MultiPolygon
+                from shapely import affinity as _aff
+                # fin_profile is centered at d=0; translate to actual model center
+                d_ctr = (d_lo_m + d_hi_m) / 2.0
+                fin_profile = _aff.translate(fin_profile, xoff=d_ctr)
                 margin = 1.0
                 bbox2d = shapely_box(d_lo_m - margin, h_lo_m - margin,
                                      d_hi_m + margin, h_hi_m + margin)
