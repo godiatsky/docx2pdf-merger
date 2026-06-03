@@ -431,16 +431,8 @@ def api_slice():
         mesh_z_min = float(mesh.bounds[0][2])
         mesh_z_max = float(mesh.bounds[1][2])
 
-        # Determine lens parameters
+        # Determine lens parameters (w_wide/w_narrow resolved later with model depth)
         use_lens = (w_wide_raw > 0) and (ax != 2)
-        w_wide   = w_wide_raw if w_wide_raw > 0 else thickness
-        # default w_narrow = 30% of w_wide so the lens taper is visible without explicit input
-        w_narrow = w_narrow_raw if w_narrow_raw > 0 else w_wide * 0.3
-
-        # Clamp w_wide so slab can't overlap adjacent slabs
-        if use_lens:
-            w_wide   = min(w_wide, thickness * 0.99)
-            w_narrow = min(w_narrow, w_wide)
 
         # Modifier approach: keep original mesh intact, subtract gap boxes.
         # The slicer (Bambu Studio) handles solid infill — no mesh cutting needed,
@@ -483,9 +475,10 @@ def api_slice():
             box.apply_translation(center_pt)
             gap_boxes.append(box)
 
-        # Lens modifiers: one combined negative_part mesh for all slabs.
-        # Uses (model_bbox − fin_profile) so size is bounded by the model's
-        # actual depth — no kilometer-long slabs.
+        # Lens modifier: one single negative_part mesh spanning the full slice extent.
+        # w_wide  = fin depth at mid-height  (default: full model depth)
+        # w_narrow= fin depth at top/bottom  (default: 30% of w_wide)
+        # Gap boxes handle the slab gaps; this modifier handles the depth narrowing.
         if use_lens:
             non_slice = [i for i in (0, 1, 2) if i != ax]
             h_ax = (non_slice[0]
@@ -497,29 +490,43 @@ def api_slice():
             h_hi_m = float(mesh.bounds[1][h_ax])
             d_lo_m = float(mesh.bounds[0][d_ax])
             d_hi_m = float(mesh.bounds[1][d_ax])
-
-            # Clamp w_wide to model depth so the profile fits inside the bbox
             model_depth = d_hi_m - d_lo_m
-            w_wide   = min(w_wide,   model_depth * 0.99)
-            w_narrow = min(w_narrow, w_wide)
 
-            fin_profile = _fin_profile_parabolic(w_wide, w_narrow, h_lo_m, h_hi_m)
+            eff_wide   = w_wide_raw   if w_wide_raw   > 0 else model_depth
+            eff_narrow = w_narrow_raw if w_narrow_raw > 0 else eff_wide * 0.3
+            eff_wide   = min(eff_wide,   model_depth * 0.99)
+            eff_narrow = min(eff_narrow, eff_wide)
+
+            fin_profile = _fin_profile_parabolic(eff_wide, eff_narrow, h_lo_m, h_hi_m)
             if fin_profile is not None:
-                lens_parts = []
-                for i in range(slices_n):
-                    center = lo + pitch * (i + (1.0 - gap) / 2.0)
-                    t_i = slab_hi_list[i] - slab_lo_list[i]
-                    mod = _make_fin_modifier(
-                        fin_profile, d_lo_m, d_hi_m, h_lo_m, h_hi_m,
-                        ax, d_ax, h_ax, center, t_i
-                    )
-                    if mod is not None:
-                        lens_parts.append(mod)
-                if lens_parts:
-                    gap_boxes.append(
-                        trimesh.util.concatenate(lens_parts)
-                        if len(lens_parts) > 1 else lens_parts[0]
-                    )
+                from shapely.geometry import box as shapely_box, MultiPolygon
+                margin = 1.0
+                bbox2d = shapely_box(d_lo_m - margin, h_lo_m - margin,
+                                     d_hi_m + margin, h_hi_m + margin)
+                neg2d = bbox2d.difference(fin_profile)
+                if not neg2d.is_empty:
+                    full_h = (hi - lo) + 0.4
+                    polys = (list(neg2d.geoms)
+                             if isinstance(neg2d, MultiPolygon) else [neg2d])
+                    parts = []
+                    for p in polys:
+                        if p.area < 1e-6:
+                            continue
+                        try:
+                            parts.append(trimesh.creation.extrude_polygon(p, full_h))
+                        except Exception:
+                            continue
+                    if parts:
+                        lens_mesh = (trimesh.util.concatenate(parts)
+                                     if len(parts) > 1 else parts[0])
+                        shift = (lo + hi) / 2.0 - full_h / 2.0
+                        T = np.zeros((4, 4)); T[3, 3] = 1.0
+                        T[d_ax, 0] = 1.0
+                        T[h_ax, 1] = 1.0
+                        T[ax,   2] = 1.0
+                        T[ax,   3] = shift
+                        lens_mesh.apply_transform(T)
+                        gap_boxes.append(lens_mesh)
 
         # ─── Export Bambu 3MF with negative_part modifiers ──────────────────────
         import zipfile, uuid as _uuid
