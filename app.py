@@ -156,59 +156,75 @@ def _facade_cut(mesh, axis_idx, depth_ratio):
     return mesh
 
 
-def _make_lens_side_neg(w_wide, w_narrow, h_lo, h_hi, big, ax, height_ax, slab_center, slab_thick, side):
-    """Parabolic lens-shaped negative modifier for one side of one slab.
+def _fin_profile_parabolic(w_wide, w_narrow, h_lo, h_hi):
+    """Parabolic lens fin cross-section as a Shapely polygon in (depth, height) space."""
+    import numpy as np
+    from shapely.geometry import Polygon
 
-    side:      -1 = negative depth-axis, +1 = positive depth-axis
-    ax:        slice axis (0/1/2)
-    height_ax: axis used for the height profile (the taller non-slice axis per component)
-    depth_ax:  inferred as the remaining non-slice, non-height axis
-    h_lo/h_hi: bounds of this component along height_ax
+    h_half = (h_hi - h_lo) / 2.0
+    if h_half <= 0 or w_wide <= 0:
+        return None
+    h_ctr = (h_lo + h_hi) / 2.0
+
+    hs = np.linspace(h_lo, h_hi, 40)
+    ws = [max(w_wide - (w_wide - w_narrow) * min(1.0, abs(h - h_ctr) / h_half) ** 2, 0.1)
+          for h in hs]
+
+    right = [(ws[i] / 2.0, hs[i]) for i in range(len(hs))]
+    left  = [(-ws[i] / 2.0, hs[i]) for i in range(len(hs) - 1, -1, -1)]
+    poly = Polygon(right + left)
+    if not poly.is_valid:
+        poly = poly.buffer(0)
+    return poly if not poly.is_empty else None
+
+
+def _make_fin_modifier(fin_profile, d_lo, d_hi, h_lo, h_hi,
+                       ax, d_ax, h_ax, slab_center, slab_thick):
+    """Negative modifier for one slab from a 2D fin profile polygon.
+
+    Computes (model_bbox − fin_profile) so the modifier is bounded by the
+    model's actual depth extent — no kilometer-long slabs.
+
+    fin_profile: Shapely polygon in (u=depth_ax, v=height_ax) space
+    d_lo/d_hi:  model bounds along depth_ax
+    h_lo/h_hi:  model bounds along height_ax
     """
     try:
         import trimesh
         import numpy as np
-        from shapely.geometry import Polygon as SPoly
+        from shapely.geometry import box as shapely_box, MultiPolygon
 
-        depth_ax = [i for i in (0, 1, 2) if i not in (ax, height_ax)][0]
-        h_half = (h_hi - h_lo) / 2.0
-        if h_half <= 0 or w_wide <= 0:
-            return None
-        h_ctr = (h_lo + h_hi) / 2.0
-
-        hs = np.linspace(h_lo, h_hi, 40)
-        ws = [max(w_wide - (w_wide - w_narrow) * min(1.0, abs(h - h_ctr) / h_half) ** 2, 0.1)
-              for h in hs]
-
-        # Polygon in (u=depth_axis, v=height_axis):
-        # region outside lens edge to far boundary (±big/2) on the given side
-        far = big / 2.0
-        sgn = -1 if side < 0 else 1
-        lens_pts = [(sgn * ws[i] / 2.0, hs[i]) for i in range(len(hs))]
-        pts = lens_pts + [(sgn * far, h_hi), (sgn * far, h_lo)]
-
-        poly = SPoly(pts)
-        if not poly.is_valid:
-            poly = poly.buffer(0)
-        if poly.is_empty or poly.area < 1e-6:
+        margin = 1.0
+        bbox = shapely_box(d_lo - margin, h_lo - margin,
+                           d_hi + margin, h_hi + margin)
+        neg = bbox.difference(fin_profile)
+        if neg.is_empty:
             return None
 
         h = slab_thick + 0.2
-        extruded = trimesh.creation.extrude_polygon(poly, h)
+        polys = list(neg.geoms) if isinstance(neg, MultiPolygon) else [neg]
+        parts = []
+        for p in polys:
+            if p.area < 1e-6:
+                continue
+            try:
+                parts.append(trimesh.creation.extrude_polygon(p, h))
+            except Exception:
+                continue
+        if not parts:
+            return None
 
-        # Generic transform: local(u, v, z_ext) → world
-        #   local u  → world depth_ax
-        #   local v  → world height_ax
-        #   local z_ext → world ax, centred at slab_center
+        out = trimesh.util.concatenate(parts) if len(parts) > 1 else parts[0]
+
+        # Map local(u=depth, v=height, z_ext=slice) → world
         shift = slab_center - h / 2.0
-        T = np.zeros((4, 4))
-        T[3, 3] = 1.0
-        T[depth_ax, 0] = 1.0
-        T[height_ax, 1] = 1.0
-        T[ax, 2] = 1.0
-        T[ax, 3] = shift
-        extruded.apply_transform(T)
-        return extruded
+        T = np.zeros((4, 4)); T[3, 3] = 1.0
+        T[d_ax, 0] = 1.0
+        T[h_ax, 1] = 1.0
+        T[ax,   2] = 1.0
+        T[ax,   3] = shift
+        out.apply_transform(T)
+        return out
     except Exception:
         return None
 
@@ -467,35 +483,43 @@ def api_slice():
             box.apply_translation(center_pt)
             gap_boxes.append(box)
 
-        # Lens modifiers: two combined parabolic meshes (one per side) covering all slabs.
-        # height_ax = the taller of the two non-slice axes (visual height of the model).
-        # All per-slab modifiers are concatenated into a single mesh to keep the object
-        # count low (1 combined lens mesh vs n_slabs×2 separate objects).
+        # Lens modifiers: one combined negative_part mesh for all slabs.
+        # Uses (model_bbox − fin_profile) so size is bounded by the model's
+        # actual depth — no kilometer-long slabs.
         if use_lens:
             non_slice = [i for i in (0, 1, 2) if i != ax]
             h_ax = (non_slice[0]
                     if mesh.extents[non_slice[0]] >= mesh.extents[non_slice[1]]
                     else non_slice[1])
-            ch_lo = float(mesh.bounds[0][h_ax])
-            ch_hi = float(mesh.bounds[1][h_ax])
+            d_ax = [i for i in non_slice if i != h_ax][0]
 
-            lens_parts = []
-            for i in range(slices_n):
-                center = lo + pitch * (i + (1.0 - gap) / 2.0)
-                t_i = slab_hi_list[i] - slab_lo_list[i]
-                for side in (-1, 1):
-                    neg = _make_lens_side_neg(
-                        w_wide, w_narrow, ch_lo, ch_hi,
-                        big, ax, h_ax, center, t_i, side
+            h_lo_m = float(mesh.bounds[0][h_ax])
+            h_hi_m = float(mesh.bounds[1][h_ax])
+            d_lo_m = float(mesh.bounds[0][d_ax])
+            d_hi_m = float(mesh.bounds[1][d_ax])
+
+            # Clamp w_wide to model depth so the profile fits inside the bbox
+            model_depth = d_hi_m - d_lo_m
+            w_wide   = min(w_wide,   model_depth * 0.99)
+            w_narrow = min(w_narrow, w_wide)
+
+            fin_profile = _fin_profile_parabolic(w_wide, w_narrow, h_lo_m, h_hi_m)
+            if fin_profile is not None:
+                lens_parts = []
+                for i in range(slices_n):
+                    center = lo + pitch * (i + (1.0 - gap) / 2.0)
+                    t_i = slab_hi_list[i] - slab_lo_list[i]
+                    mod = _make_fin_modifier(
+                        fin_profile, d_lo_m, d_hi_m, h_lo_m, h_hi_m,
+                        ax, d_ax, h_ax, center, t_i
                     )
-                    if neg is not None:
-                        lens_parts.append(neg)
-
-            if lens_parts:
-                gap_boxes.append(
-                    trimesh.util.concatenate(lens_parts)
-                    if len(lens_parts) > 1 else lens_parts[0]
-                )
+                    if mod is not None:
+                        lens_parts.append(mod)
+                if lens_parts:
+                    gap_boxes.append(
+                        trimesh.util.concatenate(lens_parts)
+                        if len(lens_parts) > 1 else lens_parts[0]
+                    )
 
         # ─── Export Bambu 3MF with negative_part modifiers ──────────────────────
         import zipfile, uuid as _uuid
