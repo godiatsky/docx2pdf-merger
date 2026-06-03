@@ -418,7 +418,8 @@ def api_slice():
         # Determine lens parameters
         use_lens = (w_wide_raw > 0) and (ax != 2)
         w_wide   = w_wide_raw if w_wide_raw > 0 else thickness
-        w_narrow = w_narrow_raw if w_narrow_raw > 0 else w_wide
+        # default w_narrow = 30% of w_wide so the lens taper is visible without explicit input
+        w_narrow = w_narrow_raw if w_narrow_raw > 0 else w_wide * 0.3
 
         # Clamp w_wide so slab can't overlap adjacent slabs
         if use_lens:
@@ -466,31 +467,35 @@ def api_slice():
             box.apply_translation(center_pt)
             gap_boxes.append(box)
 
-        # Lens modifiers: per-component parabolic side trimmers.
-        # height_ax = the taller non-slice axis of each component (usually Y for
-        # standing letters); depth_ax = the shorter one (usually Z = extrusion depth).
-        # This prevents flat/long modifiers when the model's visual height is not Z.
+        # Lens modifiers: two combined parabolic meshes (one per side) covering all slabs.
+        # height_ax = the taller of the two non-slice axes (visual height of the model).
+        # All per-slab modifiers are concatenated into a single mesh to keep the object
+        # count low (1 combined lens mesh vs n_slabs×2 separate objects).
         if use_lens:
-            components = mesh.split(only_watertight=False)
-            if not components or len(components) > 50:
-                components = [mesh]
             non_slice = [i for i in (0, 1, 2) if i != ax]
-            for comp in components:
-                h_ax = (non_slice[0]
-                        if comp.extents[non_slice[0]] >= comp.extents[non_slice[1]]
-                        else non_slice[1])
-                ch_lo = float(comp.bounds[0][h_ax])
-                ch_hi = float(comp.bounds[1][h_ax])
-                for i in range(slices_n):
-                    center = lo + pitch * (i + (1.0 - gap) / 2.0)
-                    t_i = slab_hi_list[i] - slab_lo_list[i]
-                    for side in (-1, 1):
-                        neg = _make_lens_side_neg(
-                            w_wide, w_narrow, ch_lo, ch_hi,
-                            big, ax, h_ax, center, t_i, side
-                        )
-                        if neg is not None:
-                            gap_boxes.append(neg)
+            h_ax = (non_slice[0]
+                    if mesh.extents[non_slice[0]] >= mesh.extents[non_slice[1]]
+                    else non_slice[1])
+            ch_lo = float(mesh.bounds[0][h_ax])
+            ch_hi = float(mesh.bounds[1][h_ax])
+
+            lens_parts = []
+            for i in range(slices_n):
+                center = lo + pitch * (i + (1.0 - gap) / 2.0)
+                t_i = slab_hi_list[i] - slab_lo_list[i]
+                for side in (-1, 1):
+                    neg = _make_lens_side_neg(
+                        w_wide, w_narrow, ch_lo, ch_hi,
+                        big, ax, h_ax, center, t_i, side
+                    )
+                    if neg is not None:
+                        lens_parts.append(neg)
+
+            if lens_parts:
+                gap_boxes.append(
+                    trimesh.util.concatenate(lens_parts)
+                    if len(lens_parts) > 1 else lens_parts[0]
+                )
 
         # ─── Export Bambu 3MF with negative_part modifiers ──────────────────────
         import zipfile, uuid as _uuid
