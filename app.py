@@ -501,19 +501,26 @@ def api_slice():
             if fin_profile is not None:
                 from shapely.geometry import box as shapely_box, MultiPolygon
                 from shapely import affinity as _aff
-                # fin_profile is centered at d=0; translate to actual model center
                 d_ctr = (d_lo_m + d_hi_m) / 2.0
                 fin_profile = _aff.translate(fin_profile, xoff=d_ctr)
                 margin = 1.0
-                bbox2d = shapely_box(d_lo_m - margin, h_lo_m - margin,
-                                     d_hi_m + margin, h_hi_m + margin)
-                neg2d = bbox2d.difference(fin_profile)
-                if not neg2d.is_empty:
+                # Split into left/right strips so Bambu shows two clean wedges
+                # instead of one large hollow frame around the whole model.
+                left_bbox  = shapely_box(d_lo_m - margin, h_lo_m - margin,
+                                         d_ctr,            h_hi_m + margin)
+                right_bbox = shapely_box(d_ctr,            h_lo_m - margin,
+                                         d_hi_m + margin,  h_hi_m + margin)
+                side_polys = []
+                for half_bbox in (left_bbox, right_bbox):
+                    strip = half_bbox.difference(fin_profile)
+                    if not strip.is_empty and strip.area > 1.0:
+                        side_polys.extend(
+                            list(strip.geoms) if isinstance(strip, MultiPolygon) else [strip]
+                        )
+                if side_polys:
                     full_h = (hi - lo) + 0.4
-                    polys = (list(neg2d.geoms)
-                             if isinstance(neg2d, MultiPolygon) else [neg2d])
                     parts = []
-                    for p in polys:
+                    for p in side_polys:
                         if p.area < 1e-6:
                             continue
                         try:
