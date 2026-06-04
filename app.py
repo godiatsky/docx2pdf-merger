@@ -477,10 +477,10 @@ def api_slice():
                 h_ctr  = (h_lo_m + h_hi_m) / 2.0
                 h_half = max((h_hi_m - h_lo_m) / 2.0, 1e-6)
 
-                # eff_wide  = fin thickness (in ax) at center height (default = slab)
-                # eff_narrow= fin thickness at extremes         (default = 0 = taper)
+                # eff_wide   = fin thickness at top/bottom (h_ax extremes), default = full slab
+                # eff_narrow = fin thickness at center height (waist),       default = 30% of slab
                 eff_wide   = w_wide_raw   if w_wide_raw   > 0 else thickness
-                eff_narrow = w_narrow_raw if w_narrow_raw > 0 else 0.0
+                eff_narrow = w_narrow_raw if w_narrow_raw > 0 else thickness * 0.3
                 eff_wide   = min(eff_wide, thickness)
                 eff_narrow = max(min(eff_narrow, eff_wide), 0.0)
 
@@ -489,7 +489,8 @@ def api_slice():
                 half_ws = []
                 for h in hs:
                     t = min(1.0, ((h - h_ctr) / h_half) ** 2)
-                    fin_t = max(eff_wide - (eff_wide - eff_narrow) * t, 0.0)
+                    # t=0 at center → fin_t=eff_narrow (narrow waist); t=1 at extremes → fin_t=eff_wide
+                    fin_t = max(eff_narrow + (eff_wide - eff_narrow) * t, 0.0)
                     # modifier width = pitch − fin_thickness; min = gap_size
                     half_ws.append(max((pitch - fin_t) / 2.0, sz / 2.0))
 
