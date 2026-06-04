@@ -229,14 +229,12 @@ def _make_fin_modifier(fin_profile, d_lo, d_hi, h_lo, h_hi,
         return None
 
 
-def _make_base_plate(slabs_combined, base_width=0, base_length=0, mesh_bounds=None):
-    """Create a 1mm-thick horizontal base plate at the bottom (Z_min) of the piece.
+def _make_base_plate(slabs_combined, base_width=0, base_length=0, mesh_bounds=None,
+                     ax=0, h_ax=2, d_ax=1):
+    """Create a 1mm-thick backing plate in the (ax × h_ax) plane at d_lo - 0.5mm.
 
-    Always flat in the XY plane — the standard 3D printing orientation where
-    the printer starts from the base and builds upward in Z.
-
-    base_width  → X extent (mm); 0 = auto from model X + 20mm
-    base_length → Y extent (mm); 0 = auto from model Y + 20mm
+    base_width  → extent along ax axis (mm);   0 = auto (model extent + 20mm)
+    base_length → extent along h_ax axis (mm); 0 = auto (model extent + 20mm)
     """
     import trimesh
     import numpy as np
@@ -245,16 +243,20 @@ def _make_base_plate(slabs_combined, base_width=0, base_length=0, mesh_bounds=No
         bounds = mesh_bounds if mesh_bounds is not None else slabs_combined.bounds
         ext    = bounds[1] - bounds[0]
 
-        bw = float(base_width)  if base_width  > 0 else float(ext[0]) + 20.0
-        bl = float(base_length) if base_length > 0 else float(ext[1]) + 20.0
+        bw = float(base_width)  if base_width  > 0 else float(ext[ax])   + 20.0
+        bl = float(base_length) if base_length > 0 else float(ext[h_ax]) + 20.0
 
-        cx = (bounds[0][0] + bounds[1][0]) / 2.0
-        cy = (bounds[0][1] + bounds[1][1]) / 2.0
-        cz = float(bounds[0][2]) - 0.5   # 0.5mm below the slabs
+        ctr = [(bounds[0][i] + bounds[1][i]) / 2.0 for i in range(3)]
+        ctr[d_ax] = float(bounds[0][d_ax]) - 0.5  # 0.5mm behind the back face
+
+        plate_extents = [0.0, 0.0, 0.0]
+        plate_extents[ax]   = bw
+        plate_extents[h_ax] = bl
+        plate_extents[d_ax] = 1.0
 
         t = np.eye(4)
-        t[0, 3] = cx; t[1, 3] = cy; t[2, 3] = cz
-        return trimesh.creation.box(extents=[bw, bl, 1.0], transform=t)
+        t[0, 3] = ctr[0]; t[1, 3] = ctr[1]; t[2, 3] = ctr[2]
+        return trimesh.creation.box(extents=plate_extents, transform=t)
     except Exception:
         return None
 
@@ -440,6 +442,9 @@ def api_slice():
 
         other_ax = [i for i in range(3) if i != ax]
         a1, a2 = other_ax
+        # h_ax = tallest non-slice axis (height), d_ax = depth (used for base plate and lens)
+        h_ax_g = a1 if mesh.extents[a1] >= mesh.extents[a2] else a2
+        d_ax_g = a2 if h_ax_g == a1 else a1
 
         # Compute slab boundary positions
         slab_lo_list, slab_hi_list = [], []
@@ -464,11 +469,8 @@ def api_slice():
             sz = gap_ranges[0][1] - gap_ranges[0][0]  # uniform (pitch is constant)
 
             if use_lens:
-                non_slice = [i for i in (0, 1, 2) if i != ax]
-                h_ax = (non_slice[0]
-                        if mesh.extents[non_slice[0]] >= mesh.extents[non_slice[1]]
-                        else non_slice[1])
-                d_ax = [i for i in non_slice if i != h_ax][0]
+                h_ax = h_ax_g
+                d_ax = d_ax_g
 
                 h_lo_m = float(mesh.bounds[0][h_ax])
                 h_hi_m = float(mesh.bounds[1][h_ax])
@@ -574,11 +576,12 @@ def api_slice():
         gap_tmpl_id = 2 if gap_template is not None else None
         asm_id      = len(tmpl_parts) + 1
 
-        # Optional base plate
+        # Optional base plate — placed in (ax × h_ax) plane at the back face (d_lo)
         base_plate = None
         if base_mode == 'with':
             try:
-                base_plate = _make_base_plate(None, base_width, base_length, mesh.bounds)
+                base_plate = _make_base_plate(None, base_width, base_length,
+                                              mesh.bounds, ax, h_ax_g, d_ax_g)
             except Exception:
                 pass
         bp_id = asm_id + 1 if base_plate is not None else None
