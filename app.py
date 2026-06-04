@@ -453,31 +453,33 @@ def api_slice():
         for i in range(slices_n - 1):
             gap_ranges.append((slab_hi_list[i], slab_lo_list[i + 1]))
 
-        # Build gap box meshes — just slightly larger than model cross-section
+        # Build ONE gap template mesh (centered at ax=0) + collect centers.
+        # All gaps have the same size because pitch is uniform.
         cx = (mesh.bounds[0][a1] + mesh.bounds[1][a1]) / 2.0
         cz = (mesh.bounds[0][a2] + mesh.bounds[1][a2]) / 2.0
         cover_a1 = float(mesh.extents[a1]) + 20.0
         cover_a2 = float(mesh.extents[a2]) + 20.0
-        gap_boxes = []
+        gap_template = None
+        gap_centers_ax = []
         for g_lo, g_hi in gap_ranges:
             sz = g_hi - g_lo
             if sz <= 0:
                 continue
-            center_pt = np.zeros(3)
-            center_pt[ax] = (g_lo + g_hi) / 2.0
-            center_pt[a1] = cx
-            center_pt[a2] = cz
-            extents = np.zeros(3)
-            extents[ax] = sz
-            extents[a1] = cover_a1
-            extents[a2] = cover_a2
-            box = trimesh.creation.box(extents=extents)
-            box.apply_translation(center_pt)
-            gap_boxes.append(box)
+            if gap_template is None:
+                extents_gt = np.zeros(3)
+                extents_gt[ax] = sz
+                extents_gt[a1] = cover_a1
+                extents_gt[a2] = cover_a2
+                gap_template = trimesh.creation.box(extents=extents_gt)
+                t0 = np.zeros(3); t0[a1] = cx; t0[a2] = cz
+                gap_template.apply_translation(t0)
+            gap_centers_ax.append((g_lo + g_hi) / 2.0)
 
-        # Lens modifiers: one thin negative_part per slab (same thickness as the fin).
-        # w_wide  = fin depth at mid-height  (default: full model depth)
-        # w_narrow= fin depth at top/bottom  (default: 30% of w_wide)
+        # Lens modifier: ONE template mesh (centered at ax=0) + per-slab centers.
+        # Template = extrusion of (bbox − fin_profile) side strips, slab_h thick,
+        # already in world (d_ax, h_ax) coordinates, centered in ax.
+        lens_template = None
+        slab_centers_ax = []
         if use_lens:
             non_slice = [i for i in (0, 1, 2) if i != ax]
             h_ax = (non_slice[0]
@@ -515,32 +517,32 @@ def api_slice():
                             list(strip.geoms) if isinstance(strip, MultiPolygon) else [strip]
                         )
                 if side_polys:
-                    # One modifier per slab — same thickness as the fin, not full model width
-                    for i in range(slices_n):
-                        slab_c = (slab_lo_list[i] + slab_hi_list[i]) / 2.0
-                        slab_h = (slab_hi_list[i] - slab_lo_list[i]) + 0.4
-                        parts = []
-                        for p in side_polys:
-                            if p.area < 1e-6:
-                                continue
-                            try:
-                                parts.append(trimesh.creation.extrude_polygon(p, slab_h))
-                            except Exception:
-                                continue
-                        if not parts:
+                    slab_h = thickness + 0.4
+                    parts_t = []
+                    for p in side_polys:
+                        if p.area < 1e-6:
                             continue
-                        lens_mesh = (trimesh.util.concatenate(parts)
-                                     if len(parts) > 1 else parts[0])
-                        shift = slab_c - slab_h / 2.0
+                        try:
+                            parts_t.append(trimesh.creation.extrude_polygon(p, slab_h))
+                        except Exception:
+                            continue
+                    if parts_t:
+                        raw = (trimesh.util.concatenate(parts_t)
+                               if len(parts_t) > 1 else parts_t[0])
+                        # Map local(x=d_ax, y=h_ax, z=ax) → world; center at ax=0
                         T = np.zeros((4, 4)); T[3, 3] = 1.0
-                        T[d_ax, 0] = 1.0
-                        T[h_ax, 1] = 1.0
-                        T[ax,   2] = 1.0
-                        T[ax,   3] = shift
-                        lens_mesh.apply_transform(T)
-                        gap_boxes.append(lens_mesh)
+                        T[d_ax, 0] = 1.0; T[h_ax, 1] = 1.0; T[ax, 2] = 1.0
+                        T[ax, 3] = -slab_h / 2.0
+                        raw.apply_transform(T)
+                        lens_template = raw
+                        slab_centers_ax = [
+                            (slab_lo_list[i] + slab_hi_list[i]) / 2.0
+                            for i in range(slices_n)
+                        ]
 
         # ─── Export Bambu 3MF with negative_part modifiers ──────────────────────
+        # Component reuse: one template mesh per modifier type, N component
+        # instances with per-slab/gap ax-translation transforms.
         import zipfile, uuid as _uuid
         from lxml import etree
 
@@ -566,16 +568,28 @@ def api_slice():
                 etree.SubElement(t_el, 'triangle',
                                  v1=str(face[0]), v2=str(face[1]), v3=str(face[2]))
 
+        def _ax_tf(t):
+            """Pure ax-translation transform string (3MF 12-value row-major)."""
+            tr = [0.0, 0.0, 0.0]; tr[ax] = float(t)
+            return f"1 0 0 0 1 0 0 0 1 {tr[0]:.5f} {tr[1]:.5f} {tr[2]:.5f}"
+
         model_name = os.path.splitext(secure_filename(f.filename or 'model'))[0]
 
-        # Collect parts: original mesh first, then gap boxes as negative_part
-        main_parts = [(mesh, model_name, 'normal_part')] + \
-                     [(gb, f'gap_{gi+1:02d}', 'negative_part')
-                      for gi, gb in enumerate(gap_boxes)]
-        n_main = len(main_parts)
-        asm_id = n_main + 1
+        # Template objects: (mesh, name, subtype)
+        # Object IDs: 1=original, 2=gap_template (if any), 3=lens_template (if any)
+        tmpl_parts = [(mesh, model_name, 'normal_part')]
+        if gap_template is not None:
+            tmpl_parts.append((gap_template, 'gap_template', 'negative_part'))
+        if lens_template is not None:
+            tmpl_parts.append((lens_template, 'lens_template', 'negative_part'))
 
-        # Optional base plate resolved before XML build so bp_id is known
+        orig_id      = 1
+        gap_tmpl_id  = 2 if gap_template  is not None else None
+        lens_tmpl_id = (2 if gap_template is None else 3) if lens_template is not None else None
+
+        asm_id = len(tmpl_parts) + 1
+
+        # Optional base plate
         base_plate = None
         if base_mode == 'with':
             try:
@@ -584,15 +598,22 @@ def api_slice():
                 pass
         bp_id = asm_id + 1 if base_plate is not None else None
 
-        # ── 3D/Objects/object_1.model: all mesh data ──────────────────────────
+        # Component instances: (objectid, transform_str)
+        comp_instances = [(orig_id, IDENT12)]
+        for c in gap_centers_ax:
+            comp_instances.append((gap_tmpl_id, _ax_tf(c)))
+        for c in slab_centers_ax:
+            comp_instances.append((lens_tmpl_id, _ax_tf(c)))
+
+        # ── 3D/Objects/object_1.model: template mesh data ─────────────────────
         obj_root = etree.Element('model', nsmap={None: ns_core}, unit='millimeter')
         obj_res = etree.SubElement(obj_root, 'resources')
-        for idx, (tmesh_, name_, _) in enumerate(main_parts, start=1):
+        for idx, (tmesh_, name_, _) in enumerate(tmpl_parts, start=1):
             _write_mesh(obj_res, idx, tmesh_, name_)
         obj_xml = etree.tostring(obj_root, xml_declaration=True,
                                  encoding='UTF-8', pretty_print=True)
 
-        # ── 3D/3dmodel.model: assembly structure ──────────────────────────────
+        # ── 3D/3dmodel.model: assembly with component reuse ───────────────────
         main_root = etree.Element('model',
                                   nsmap={None: ns_core, 'p': ns_prod, 'BambuStudio': ns_bs},
                                   unit='millimeter')
@@ -603,20 +624,17 @@ def api_slice():
                                    id=str(asm_id), type='model', name=model_name)
         asm_obj.set(P_ + 'UUID', _uid())
         comps = etree.SubElement(asm_obj, 'components')
-        for idx in range(1, n_main + 1):
+        for obj_id_, tf_str in comp_instances:
             comp = etree.SubElement(comps, 'component',
-                                    objectid=str(idx), transform=IDENT16)
+                                    objectid=str(obj_id_), transform=tf_str)
             comp.set(P_ + 'path', '/3D/Objects/object_1.model')
             comp.set(P_ + 'UUID', _uid())
 
-        # Base plate as inline object in main model (standalone, no modifiers)
         if base_plate is not None:
             _write_mesh(main_res, bp_id, base_plate, 'base')
 
-        # Place assembly on build plate: bottom at Z=0, centred at (128, 128)
         ext_z = float(mesh.extents[2])
         build_tf = f"1 0 0 0 1 0 0 0 1 128.00000 128.00000 {ext_z / 2.0:.5f}"
-
         build_el = etree.SubElement(main_root, 'build')
         build_el.set(P_ + 'UUID', _uid())
         asm_item = etree.SubElement(build_el, 'item',
@@ -637,7 +655,7 @@ def api_slice():
         etree.SubElement(obj_cfg, 'metadata', key='name', value=model_name)
         etree.SubElement(obj_cfg, 'metadata', key='extruder', value='1')
         etree.SubElement(obj_cfg, 'metadata', face_count=str(len(mesh.faces)))
-        for idx, (tmesh_, name_, subtype) in enumerate(main_parts, start=1):
+        for idx, (tmesh_, name_, subtype) in enumerate(tmpl_parts, start=1):
             p_el = etree.SubElement(obj_cfg, 'part', id=str(idx), subtype=subtype)
             etree.SubElement(p_el, 'metadata', key='name', value=name_)
             etree.SubElement(p_el, 'metadata', key='matrix', value=IDENT16)
