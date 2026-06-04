@@ -247,7 +247,7 @@ def _make_base_plate(slabs_combined, base_width=0, base_length=0, mesh_bounds=No
         bl = float(base_length) if base_length > 0 else float(ext[h_ax]) + 20.0
 
         ctr = [(bounds[0][i] + bounds[1][i]) / 2.0 for i in range(3)]
-        ctr[d_ax] = float(bounds[0][d_ax]) - 0.5  # 0.5mm behind the back face
+        ctr[d_ax] = float(bounds[1][d_ax]) + 0.5  # 0.5mm behind the back (d_hi) face
 
         plate_extents = [0.0, 0.0, 0.0]
         plate_extents[ax]   = bw
