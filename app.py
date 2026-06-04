@@ -453,92 +453,80 @@ def api_slice():
         for i in range(slices_n - 1):
             gap_ranges.append((slab_hi_list[i], slab_lo_list[i + 1]))
 
-        # Build ONE gap template mesh (centered at ax=0) + collect centers.
-        # All gaps have the same size because pitch is uniform.
-        cx = (mesh.bounds[0][a1] + mesh.bounds[1][a1]) / 2.0
-        cz = (mesh.bounds[0][a2] + mesh.bounds[1][a2]) / 2.0
-        cover_a1 = float(mesh.extents[a1]) + 20.0
-        cover_a2 = float(mesh.extents[a2]) + 20.0
+        # Build ONE gap modifier template (centered at ax=0).
+        # use_lens=True: biconcave shape — placed in each gap, its concave faces
+        #   shape both adjacent fins simultaneously (no separate rectangular boxes).
+        # use_lens=False: rectangular box — simple gap cut, no fin shaping.
         gap_template = None
         gap_centers_ax = []
-        for g_lo, g_hi in gap_ranges:
-            sz = g_hi - g_lo
-            if sz <= 0:
-                continue
-            if gap_template is None:
+
+        if gap_ranges:
+            sz = gap_ranges[0][1] - gap_ranges[0][0]  # uniform (pitch is constant)
+
+            if use_lens:
+                non_slice = [i for i in (0, 1, 2) if i != ax]
+                h_ax = (non_slice[0]
+                        if mesh.extents[non_slice[0]] >= mesh.extents[non_slice[1]]
+                        else non_slice[1])
+                d_ax = [i for i in non_slice if i != h_ax][0]
+
+                h_lo_m = float(mesh.bounds[0][h_ax])
+                h_hi_m = float(mesh.bounds[1][h_ax])
+                d_lo_m = float(mesh.bounds[0][d_ax])
+                d_hi_m = float(mesh.bounds[1][d_ax])
+                h_ctr  = (h_lo_m + h_hi_m) / 2.0
+                h_half = max((h_hi_m - h_lo_m) / 2.0, 1e-6)
+
+                # eff_wide  = fin thickness (in ax) at center height (default = slab)
+                # eff_narrow= fin thickness at extremes         (default = 0 = taper)
+                eff_wide   = w_wide_raw   if w_wide_raw   > 0 else thickness
+                eff_narrow = w_narrow_raw if w_narrow_raw > 0 else 0.0
+                eff_wide   = min(eff_wide, thickness)
+                eff_narrow = max(min(eff_narrow, eff_wide), 0.0)
+
+                from shapely.geometry import Polygon as _Polygon
+                hs = np.linspace(h_lo_m, h_hi_m, 40)
+                half_ws = []
+                for h in hs:
+                    t = min(1.0, ((h - h_ctr) / h_half) ** 2)
+                    fin_t = max(eff_wide - (eff_wide - eff_narrow) * t, 0.0)
+                    # modifier width = pitch − fin_thickness; min = gap_size
+                    half_ws.append(max((pitch - fin_t) / 2.0, sz / 2.0))
+
+                right = [(half_ws[i], hs[i]) for i in range(len(hs))]
+                left  = [(-half_ws[i], hs[i]) for i in range(len(hs) - 1, -1, -1)]
+                poly = _Polygon(right + left)
+                if not poly.is_valid:
+                    poly = poly.buffer(0)
+
+                if not poly.is_empty and poly.area > 1e-6:
+                    margin = 2.0
+                    depth_cover = (d_hi_m - d_lo_m) + 2 * margin
+                    raw = trimesh.creation.extrude_polygon(poly, depth_cover)
+                    # local (x=ax, y=h_ax, z=d_ax) → world
+                    T = np.zeros((4, 4)); T[3, 3] = 1.0
+                    T[ax,   0] = 1.0
+                    T[h_ax, 1] = 1.0
+                    T[d_ax, 2] = 1.0
+                    T[d_ax, 3] = d_lo_m - margin
+                    raw.apply_transform(T)
+                    gap_template = raw
+
+            else:
+                # Rectangular gap box: full cross-section cut
                 extents_gt = np.zeros(3)
                 extents_gt[ax] = sz
-                extents_gt[a1] = cover_a1
-                extents_gt[a2] = cover_a2
+                extents_gt[a1] = float(mesh.extents[a1]) + 20.0
+                extents_gt[a2] = float(mesh.extents[a2]) + 20.0
                 gap_template = trimesh.creation.box(extents=extents_gt)
-                t0 = np.zeros(3); t0[a1] = cx; t0[a2] = cz
-                gap_template.apply_translation(t0)
-            gap_centers_ax.append((g_lo + g_hi) / 2.0)
+                cx = (mesh.bounds[0][a1] + mesh.bounds[1][a1]) / 2.0
+                cz = (mesh.bounds[0][a2] + mesh.bounds[1][a2]) / 2.0
+                gap_template.apply_translation([0 if i == ax else
+                                                cx if i == a1 else cz
+                                                for i in range(3)])
 
-        # Lens modifier: ONE template mesh (centered at ax=0) + per-slab centers.
-        # Template = extrusion of (bbox − fin_profile) side strips, slab_h thick,
-        # already in world (d_ax, h_ax) coordinates, centered in ax.
-        lens_template = None
-        slab_centers_ax = []
-        if use_lens:
-            non_slice = [i for i in (0, 1, 2) if i != ax]
-            h_ax = (non_slice[0]
-                    if mesh.extents[non_slice[0]] >= mesh.extents[non_slice[1]]
-                    else non_slice[1])
-            d_ax = [i for i in non_slice if i != h_ax][0]
-
-            h_lo_m = float(mesh.bounds[0][h_ax])
-            h_hi_m = float(mesh.bounds[1][h_ax])
-            d_lo_m = float(mesh.bounds[0][d_ax])
-            d_hi_m = float(mesh.bounds[1][d_ax])
-            model_depth = d_hi_m - d_lo_m
-
-            eff_wide   = w_wide_raw   if w_wide_raw   > 0 else model_depth
-            eff_narrow = w_narrow_raw if w_narrow_raw > 0 else eff_wide * 0.3
-            eff_wide   = min(eff_wide,   model_depth * 0.99)
-            eff_narrow = min(eff_narrow, eff_wide)
-
-            fin_profile = _fin_profile_parabolic(eff_wide, eff_narrow, h_lo_m, h_hi_m)
-            if fin_profile is not None:
-                from shapely.geometry import box as shapely_box, MultiPolygon
-                from shapely import affinity as _aff
-                d_ctr = (d_lo_m + d_hi_m) / 2.0
-                fin_profile = _aff.translate(fin_profile, xoff=d_ctr)
-                margin = 1.0
-                left_bbox  = shapely_box(d_lo_m - margin, h_lo_m - margin,
-                                         d_ctr,            h_hi_m + margin)
-                right_bbox = shapely_box(d_ctr,            h_lo_m - margin,
-                                         d_hi_m + margin,  h_hi_m + margin)
-                side_polys = []
-                for half_bbox in (left_bbox, right_bbox):
-                    strip = half_bbox.difference(fin_profile)
-                    if not strip.is_empty and strip.area > 1.0:
-                        side_polys.extend(
-                            list(strip.geoms) if isinstance(strip, MultiPolygon) else [strip]
-                        )
-                if side_polys:
-                    slab_h = thickness + 0.4
-                    parts_t = []
-                    for p in side_polys:
-                        if p.area < 1e-6:
-                            continue
-                        try:
-                            parts_t.append(trimesh.creation.extrude_polygon(p, slab_h))
-                        except Exception:
-                            continue
-                    if parts_t:
-                        raw = (trimesh.util.concatenate(parts_t)
-                               if len(parts_t) > 1 else parts_t[0])
-                        # Map local(x=d_ax, y=h_ax, z=ax) → world; center at ax=0
-                        T = np.zeros((4, 4)); T[3, 3] = 1.0
-                        T[d_ax, 0] = 1.0; T[h_ax, 1] = 1.0; T[ax, 2] = 1.0
-                        T[ax, 3] = -slab_h / 2.0
-                        raw.apply_transform(T)
-                        lens_template = raw
-                        slab_centers_ax = [
-                            (slab_lo_list[i] + slab_hi_list[i]) / 2.0
-                            for i in range(slices_n)
-                        ]
+            if gap_template is not None:
+                gap_centers_ax = [(g_lo + g_hi) / 2.0 for g_lo, g_hi in gap_ranges]
 
         # ─── Export Bambu 3MF with negative_part modifiers ──────────────────────
         # Component reuse: one template mesh per modifier type, N component
@@ -576,18 +564,14 @@ def api_slice():
         model_name = os.path.splitext(secure_filename(f.filename or 'model'))[0]
 
         # Template objects: (mesh, name, subtype)
-        # Object IDs: 1=original, 2=gap_template (if any), 3=lens_template (if any)
+        # Object IDs: 1=original, 2=gap_template (if any)
         tmpl_parts = [(mesh, model_name, 'normal_part')]
         if gap_template is not None:
             tmpl_parts.append((gap_template, 'gap_template', 'negative_part'))
-        if lens_template is not None:
-            tmpl_parts.append((lens_template, 'lens_template', 'negative_part'))
 
-        orig_id      = 1
-        gap_tmpl_id  = 2 if gap_template  is not None else None
-        lens_tmpl_id = (2 if gap_template is None else 3) if lens_template is not None else None
-
-        asm_id = len(tmpl_parts) + 1
+        orig_id     = 1
+        gap_tmpl_id = 2 if gap_template is not None else None
+        asm_id      = len(tmpl_parts) + 1
 
         # Optional base plate
         base_plate = None
@@ -602,8 +586,6 @@ def api_slice():
         comp_instances = [(orig_id, IDENT12)]
         for c in gap_centers_ax:
             comp_instances.append((gap_tmpl_id, _ax_tf(c)))
-        for c in slab_centers_ax:
-            comp_instances.append((lens_tmpl_id, _ax_tf(c)))
 
         # ── 3D/Objects/object_1.model: template mesh data ─────────────────────
         obj_root = etree.Element('model', nsmap={None: ns_core}, unit='millimeter')
