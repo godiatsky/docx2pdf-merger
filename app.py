@@ -475,10 +475,9 @@ def api_slice():
             box.apply_translation(center_pt)
             gap_boxes.append(box)
 
-        # Lens modifier: one single negative_part mesh spanning the full slice extent.
+        # Lens modifiers: one thin negative_part per slab (same thickness as the fin).
         # w_wide  = fin depth at mid-height  (default: full model depth)
         # w_narrow= fin depth at top/bottom  (default: 30% of w_wide)
-        # Gap boxes handle the slab gaps; this modifier handles the depth narrowing.
         if use_lens:
             non_slice = [i for i in (0, 1, 2) if i != ax]
             h_ax = (non_slice[0]
@@ -504,8 +503,6 @@ def api_slice():
                 d_ctr = (d_lo_m + d_hi_m) / 2.0
                 fin_profile = _aff.translate(fin_profile, xoff=d_ctr)
                 margin = 1.0
-                # Split into left/right strips so Bambu shows two clean wedges
-                # instead of one large hollow frame around the whole model.
                 left_bbox  = shapely_box(d_lo_m - margin, h_lo_m - margin,
                                          d_ctr,            h_hi_m + margin)
                 right_bbox = shapely_box(d_ctr,            h_lo_m - margin,
@@ -518,19 +515,23 @@ def api_slice():
                             list(strip.geoms) if isinstance(strip, MultiPolygon) else [strip]
                         )
                 if side_polys:
-                    full_h = (hi - lo) + 0.4
-                    parts = []
-                    for p in side_polys:
-                        if p.area < 1e-6:
+                    # One modifier per slab — same thickness as the fin, not full model width
+                    for i in range(slices_n):
+                        slab_c = (slab_lo_list[i] + slab_hi_list[i]) / 2.0
+                        slab_h = (slab_hi_list[i] - slab_lo_list[i]) + 0.4
+                        parts = []
+                        for p in side_polys:
+                            if p.area < 1e-6:
+                                continue
+                            try:
+                                parts.append(trimesh.creation.extrude_polygon(p, slab_h))
+                            except Exception:
+                                continue
+                        if not parts:
                             continue
-                        try:
-                            parts.append(trimesh.creation.extrude_polygon(p, full_h))
-                        except Exception:
-                            continue
-                    if parts:
                         lens_mesh = (trimesh.util.concatenate(parts)
                                      if len(parts) > 1 else parts[0])
-                        shift = (lo + hi) / 2.0 - full_h / 2.0
+                        shift = slab_c - slab_h / 2.0
                         T = np.zeros((4, 4)); T[3, 3] = 1.0
                         T[d_ax, 0] = 1.0
                         T[h_ax, 1] = 1.0
