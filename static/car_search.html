@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Поиск гибридного авто в Германии</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#F7F6F3;--card:#fff;--border:#E2DFD8;--border2:#C9C5BC;
+    --accent:#16A34A;--accent-h:#15803D;--accent-l:#F0FDF4;
+    --text:#111827;--sub:#6B7280;
+    --tag:#ECFDF5;--tag-b:#A7F3D0;--tag-t:#065F46;
+  }
+  body{
+    font-family:'DM Sans',sans-serif;
+    background:var(--bg);color:var(--text);
+    min-height:100vh;padding:24px;
+  }
+  .wrap{max-width:800px;margin:0 auto}
+
+  .card{
+    background:var(--card);border:1px solid var(--border);
+    border-radius:16px;padding:32px;
+    box-shadow:0 4px 24px rgba(0,0,0,.06);margin-bottom:20px;
+  }
+
+  h1{font-size:22px;font-weight:700;margin-bottom:4px}
+  .sub{font-size:13px;color:var(--sub);margin-bottom:24px}
+  hr{border:none;border-top:1px solid var(--border);margin:20px 0}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+  @media(max-width:560px){.grid,.grid-3{grid-template-columns:1fr}}
+
+  .field{display:flex;flex-direction:column;gap:6px}
+  label{font-size:12px;font-weight:600;color:var(--sub);text-transform:uppercase;letter-spacing:.05em}
+  select,input{
+    padding:10px 12px;border:1px solid var(--border2);border-radius:8px;
+    font-family:inherit;font-size:14px;color:var(--text);
+    background:#fff;outline:none;
+    transition:border-color .15s;
+  }
+  select:focus,input:focus{border-color:var(--accent)}
+
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    padding:13px 24px;border:none;border-radius:10px;
+    font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;
+    transition:background .15s;text-decoration:none;
+  }
+  .btn-green{background:var(--accent);color:#fff;width:100%;margin-top:8px}
+  .btn-green:hover{background:var(--accent-h)}
+
+  /* Рекомендации */
+  .models{display:flex;flex-direction:column;gap:12px}
+  .model-card{
+    border:1px solid var(--border);border-radius:12px;padding:16px;
+    display:flex;align-items:flex-start;gap:14px;
+  }
+  .model-card:hover{border-color:var(--accent);background:var(--accent-l)}
+  .model-icon{font-size:28px;flex-shrink:0}
+  .model-name{font-weight:700;font-size:15px}
+  .model-desc{font-size:12px;color:var(--sub);margin-top:3px}
+  .model-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .tag{
+    background:var(--tag);border:1px solid var(--tag-b);color:var(--tag-t);
+    font-size:11px;font-weight:600;padding:2px 8px;border-radius:100px;
+  }
+  .tag.warn{background:#FEF9C3;border-color:#FDE047;color:#713F12}
+
+  /* Ссылки на площадки */
+  .links{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:16px}
+  @media(max-width:560px){.links{grid-template-columns:1fr}}
+  .link-btn{
+    display:flex;flex-direction:column;align-items:center;gap:4px;
+    padding:14px;border:1px solid var(--border);border-radius:12px;
+    text-decoration:none;color:var(--text);
+    transition:all .15s;text-align:center;
+  }
+  .link-btn:hover{border-color:var(--accent);background:var(--accent-l)}
+  .link-name{font-size:13px;font-weight:700}
+  .link-desc{font-size:11px;color:var(--sub)}
+
+  .back{font-size:13px;color:var(--sub);text-decoration:none;display:inline-flex;align-items:center;gap:5px;margin-bottom:16px}
+  .back:hover{color:var(--text)}
+
+  #result-card{display:none}
+  #result-card.show{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <a class="back" href="/">← Назад к DOCX→PDF</a>
+
+  <div class="card">
+    <h1>Поиск гибрида в Германии</h1>
+    <p class="sub">Генерирует прямые ссылки с фильтрами на крупнейшие площадки</p>
+    <hr>
+
+    <div class="grid-3">
+      <div class="field">
+        <label>Топливо</label>
+        <select id="fuel">
+          <option value="hybrid">Гибрид (бензин+эл.)</option>
+          <option value="hybrid_plugin">Плагин-гибрид</option>
+          <option value="both">Оба типа</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Год выпуска до</label>
+        <input type="number" id="yearTo" value="2018" min="2000" max="2025">
+      </div>
+      <div class="field">
+        <label>Год выпуска от</label>
+        <input type="number" id="yearFrom" value="2014" min="2000" max="2025">
+      </div>
+    </div>
+
+    <div class="grid" style="margin-top:16px">
+      <div class="field">
+        <label>Макс. цена (€)</label>
+        <input type="number" id="maxPrice" value="8000" min="1000" step="500">
+      </div>
+      <div class="field">
+        <label>Макс. пробег (км)</label>
+        <input type="number" id="maxMileage" value="120000" min="10000" step="10000">
+      </div>
+    </div>
+
+    <button class="btn btn-green" onclick="search()">Открыть поиск на всех площадках</button>
+  </div>
+
+  <div class="card" id="result-card">
+    <h2 style="font-size:16px;font-weight:700;margin-bottom:16px">Ссылки на поиск</h2>
+    <div class="links" id="links-box"></div>
+    <p style="font-size:11px;color:var(--sub);margin-top:12px">Ссылки открываются в новых вкладках с уже настроенными фильтрами.</p>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:16px;font-weight:700;margin-bottom:16px">Лучшие модели в бюджете до €8,000</h2>
+    <div class="models">
+
+      <div class="model-card">
+        <div class="model-icon">🟢</div>
+        <div>
+          <div class="model-name">Toyota Prius (2015–2016)</div>
+          <div class="model-desc">Самый надёжный гибрид с огромным сроком службы батареи. 90 кВт (122 л.с.), расход ~4–4.5 л/100 км. Батарея легко меняется, активное комьюнити.</div>
+          <div class="model-tags">
+            <span class="tag">от ~€6,500</span>
+            <span class="tag">автомат CVT</span>
+            <span class="tag">надёжный</span>
+            <span class="tag">много предложений</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="model-card">
+        <div class="model-icon">🟢</div>
+        <div>
+          <div class="model-name">Toyota Auris Hybrid (2014–2016)</div>
+          <div class="model-desc">Более компактный, привычный кузов хэтчбек. Та же гибридная система что у Prius. Touring Sports — универсал. Модели 2014–2015 реальны в бюджете.</div>
+          <div class="model-tags">
+            <span class="tag">от ~€6,999</span>
+            <span class="tag">хэтч/универсал</span>
+            <span class="tag">система Prius</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="model-card">
+        <div class="model-icon">🟡</div>
+        <div>
+          <div class="model-name">Toyota Yaris Hybrid (2014–2017)</div>
+          <div class="model-desc">Самый маленький и дешёвый вариант. Подходит для города. 74 кВт (100 л.с.), расход ~3.5 л/100 км. Легко войти в бюджет даже с небольшим пробегом.</div>
+          <div class="model-tags">
+            <span class="tag">от ~€5,500</span>
+            <span class="tag">город</span>
+            <span class="tag">экономичный</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="model-card">
+        <div class="model-icon">🟡</div>
+        <div>
+          <div class="model-name">Lexus CT 200h (2012–2014)</div>
+          <div class="model-desc">Премиальный компакт на базе Prius. Отличное качество отделки, хороший звук. Модели до 2015 иногда попадают в бюджет €8,000, особенно частные продажи.</div>
+          <div class="model-tags">
+            <span class="tag">от ~€7,500–9,000</span>
+            <span class="tag">премиум</span>
+            <span class="tag">Kleinanzeigen</span>
+            <span class="tag warn">проверить батарею</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="model-card">
+        <div class="model-icon">🔴</div>
+        <div>
+          <div class="model-name">Hyundai IONIQ / Kia Niro (2016–2018)</div>
+          <div class="model-desc">Отличные современные гибриды, но в бюджет €8,000 практически не попадают — рыночная цена от €13,000–14,000. Стоит рассматривать при увеличении бюджета.</div>
+          <div class="model-tags">
+            <span class="tag warn">от €13,000+</span>
+            <span class="tag warn">выше бюджета</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="card" style="font-size:13px;color:var(--sub)">
+    <strong style="color:var(--text)">Советы при покупке</strong>
+    <ul style="margin-top:10px;padding-left:18px;display:flex;flex-direction:column;gap:6px">
+      <li>Проверьте состояние гибридной батареи — это главный риск. Запросите диагностику (HV battery health check).</li>
+      <li>На Kleinanzeigen.de часто дешевле (частные продавцы), но без гарантии.</li>
+      <li>Дилеры на mobile.de/AutoScout24 дороже, но дают Gewährleistung (законная гарантия 12 мес.).</li>
+      <li>TÜV-отчёт (срок действия) — обязательно проверяйте.</li>
+      <li>Идеальный пробег для гибрида — до 100,000 км, выше требует проверки батареи.</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+function buildMobileDe(yearFrom, yearTo, maxPrice, maxMileage, fuel) {
+  const ft = fuel === 'hybrid_plugin' ? 'HYBRID_PETROL_PLUGIN' : 'HYBRID';
+  let url = `https://suchen.mobile.de/fahrzeuge/search.html?isSearchRequest=true&scopeId=C&ft=${ft}&maxPrice=${maxPrice}&minFirstRegistrationDate=${yearFrom}-01-01&maxFirstRegistrationDate=${yearTo}-12-31&maxMileage=${maxMileage}&cn=DE&lang=ru`;
+  if (fuel === 'both') {
+    url = `https://suchen.mobile.de/fahrzeuge/search.html?isSearchRequest=true&scopeId=C&ft=HYBRID&ft=HYBRID_PETROL_PLUGIN&maxPrice=${maxPrice}&minFirstRegistrationDate=${yearFrom}-01-01&maxFirstRegistrationDate=${yearTo}-12-31&maxMileage=${maxMileage}&cn=DE&lang=ru`;
+  }
+  return url;
+}
+
+function buildAutoScout24(yearFrom, yearTo, maxPrice, maxMileage, fuel) {
+  const fuelParam = fuel === 'hybrid_plugin' ? 'fuel=17' : (fuel === 'both' ? 'fuel=14&fuel=17' : 'fuel=14');
+  return `https://www.autoscout24.de/lst?atype=C&cy=D&damaged_listing=exclude&fregfrom=${yearFrom}&fregto=${yearTo}&kmto=${maxMileage}&priceto=${maxPrice}&${fuelParam}&sort=price&ustate=N%2CU`;
+}
+
+function buildKleinanzeigen(maxPrice, fuel) {
+  return `https://www.kleinanzeigen.de/s-autos/hybrid-auto/k0c216+autos.fuel_s:hybrid+autos.price_i:,%2C${maxPrice}`;
+}
+
+function search() {
+  const yearFrom   = document.getElementById('yearFrom').value   || '2014';
+  const yearTo     = document.getElementById('yearTo').value     || '2018';
+  const maxPrice   = document.getElementById('maxPrice').value   || '8000';
+  const maxMileage = document.getElementById('maxMileage').value || '120000';
+  const fuel       = document.getElementById('fuel').value;
+
+  const platforms = [
+    {
+      name: 'mobile.de',
+      desc: 'Крупнейший рынок Германии',
+      url: buildMobileDe(yearFrom, yearTo, maxPrice, maxMileage, fuel)
+    },
+    {
+      name: 'AutoScout24',
+      desc: 'Крупнейший рынок Европы',
+      url: buildAutoScout24(yearFrom, yearTo, maxPrice, maxMileage, fuel)
+    },
+    {
+      name: 'Kleinanzeigen',
+      desc: 'Частные продавцы, дешевле',
+      url: buildKleinanzeigen(maxPrice, fuel)
+    }
+  ];
+
+  const box = document.getElementById('links-box');
+  box.innerHTML = '';
+  platforms.forEach(p => {
+    const a = document.createElement('a');
+    a.className = 'link-btn';
+    a.href = p.url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.innerHTML = `<div class="link-name">${p.name}</div><div class="link-desc">${p.desc}</div>`;
+    box.appendChild(a);
+  });
+
+  document.getElementById('result-card').classList.add('show');
+
+  platforms.forEach(p => window.open(p.url, '_blank'));
+}
+</script>
+</body>
+</html>

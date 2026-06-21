@@ -37,6 +37,10 @@ def merge_pdfs(p1, p2, out):
 def index():
     return app.send_static_file('index.html')
 
+@app.route('/car-search')
+def car_search():
+    return app.send_static_file('car_search.html')
+
 @app.route('/merge', methods=['POST'])
 def merge():
     f1 = request.files.get('file1')
